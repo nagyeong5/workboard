@@ -126,6 +126,7 @@ button{cursor:pointer}
 .c-warn{background:var(--warn-soft);color:var(--warn)}
 .c-bad{background:var(--bad-soft);color:var(--bad)}
 .c-g{background:var(--band);color:var(--fg2)}
+.c-evt{background:var(--acc);color:#fff}
 .c-dash{border:1px dashed var(--fg4);color:var(--fg2)}
 .row{display:flex;align-items:center;gap:10px;min-width:0}
 .item{display:flex;align-items:flex-start;gap:10px;padding:6px 4px;border-radius:8px;min-width:0}
@@ -469,6 +470,7 @@ function dayCap(){ const w = ST().work; return (hm(w.end) - hm(w.start)) - (hm(w
 function halfCap(){ return dayCap() / 2; }
 function workCap(s){
   if (isOff(s)) return 0;
+  if (evBlock(s)) return 0;
   const l = leaveOn(s); if (!l) return dayCap();
   if (l.ltype === 'annual' || l.ltype === 'pos') return 0;
   if (l.ltype === 'am' || l.ltype === 'pm') return halfCap();
@@ -595,6 +597,34 @@ function normP(p){ // 단계·하위업무에 id 부여, 하위업무가 있으�
   p.steps = (p.steps || []).map(st => { st = Object.assign({}, st); if (!st.id) st.id = sid(); st.subs = (st.subs || []).map(sb => Object.assign({ who: '', done: false }, sb, { id: sb.id || sid() })); if (st.subs.length) st.done = st.subs.every(sb => sb.done); return st; });
   return p;
 }
+const KEYLABELS = ['마감일', '오픈일', '출시일', 'MVP 출시일', '보고일', '종료일'];
+const isEvt = p => p.type === '행사';
+function evRange(p){ if (!p.evS) return null; return [p.evS, p.evE && p.evE >= p.evS ? p.evE : p.evS]; }
+function projOnCal(p){ return p.showCal !== false && ['active', 'done'].includes(p.status || 'active'); }
+function projCal(s){ // 그날 캘린더에 보일 프로젝트 대표 날짜 · 행사 (업무 캘린더에만)
+  if (V.mode === 'personal') return [];
+  const out = [];
+  Object.values(S.projects).forEach(p => {
+    if (!projOnCal(p)) return;
+    if (isEvt(p)) { const r = evRange(p); if (r && s >= r[0] && s <= r[1]) { const tot = Math.round((P(r[1]) - P(r[0])) / 864e5) + 1, n = Math.round((P(s) - P(r[0])) / 864e5) + 1; out.push({ p, t: '행사 · ' + p.name + (tot > 1 ? ' (' + n + '/' + tot + '일)' : ''), k: 'evt' }); } }
+    else if (p.keyDate === s) out.push({ p, t: '◆ ' + (p.keyLabel || '마감일') + ' · ' + p.name, k: 'key' });
+  });
+  return out;
+}
+function offLook(s){ return isOff(s) || (fullOff(s) && !evBlock(s)); }
+function evBlock(s){ return Object.values(S.projects).some(p => isEvt(p) && (p.status || 'active') === 'active' && p.block !== false && evRange(p) && s >= evRange(p)[0] && s <= evRange(p)[1]); }
+function projDateTxt(p){ if (isEvt(p)) { const r = evRange(p); return r ? '행사 ' + mdw(r[0]) + (r[1] !== r[0] ? ' ~ ' + mdw(r[1]) : '') : '행사일 미정'; } return p.keyDate ? '◆ ' + (p.keyLabel || '마감일') + ' ' + mdw(p.keyDate) : '대표 날짜 없음'; }
+function calFields(f){ // 새로 만들기 · 수정 창 공통: 대표 날짜 / 행사 기간
+  const evt = f.type === '행사';
+  return `<div class="card" style="background:var(--surface2);border:0;gap:8px">
+    ${evt ? `<div class="fgrid"><label class="f">행사 시작일<input class="in" type="date" id="cf-s" data-f="base" value="${h(f.base || '')}"></label><label class="f">행사 종료일 (하루면 같은 날)<input class="in" type="date" id="cf-e" data-f="evE" value="${h(f.evE || f.base || '')}"></label></div>
+      <div class="fl">${opt(f.showCal !== false, 'cfT', 'data-k="showCal"', '업무 캘린더에 표시')}${opt(f.block !== false, 'cfT', 'data-k="block"', '행사 기간엔 다른 업무 배정 안 함')}</div>
+      ${f.base && (() => { let n = 0; const e = f.evE && f.evE >= f.base ? f.evE : f.base; for (let d = f.base; d <= e; d = add(d, 1)) if (isOff(d)) n++; return n; })() ? `<span class="muted">주말·공휴일이 포함돼요. 끝나면 근태에서 "근무시간 외 업무"로 기록 → 보상휴무로 전환하세요.</span>` : ''}`
+    : `<div class="fl"><span class="muted">대표 날짜</span>${KEYLABELS.map(l => opt((f.keyLabel || '마감일') === l, 'cfLabel', `data-v="${l}"`, l)).join('')}</div>
+      <div class="fgrid"><label class="f">${h(f.keyLabel || '마감일')}<input class="in" type="date" id="cf-k" data-f="base" value="${h(f.base || '')}"></label><label class="f">직접 이름 붙이기 (선택)<input class="in" id="cf-l" data-f="keyLabelC" value="${h(f.keyLabelC || '')}" placeholder="예: 1차 시안 공유"></label></div>
+      <div class="fl">${opt(f.showCal !== false, 'cfT', 'data-k="showCal"', '업무 캘린더에 표시')}</div>`}
+    <span class="muted">개인 캘린더에는 나오지 않아요.</span></div>`;
+}
 const stepDone = st => (st.subs || []).length ? st.subs.every(sb => sb.done) : !!st.done;
 function units(p){ // 실제로 할 일이 되는 단위: 하위업무, 또는 하위업무 없는 단계
   const u = [];
@@ -666,6 +696,7 @@ let MIGRATED = false;
 function migrateProjects(){ // 이전 버전 프로젝트: 단계 id 부여 + 할 일 연결
   MIGRATED = true;
   Object.values(S.projects).forEach(p => { if (!p.v2) put('projects', p.id, Object.assign({}, p, { v2: true })); });
+  Object.values(S.projects).forEach(p => { if (p.v3) return; const last = (p.steps || []).map(x => x.due).filter(Boolean).sort().pop() || null; const o = Object.assign({}, S.projects[p.id], { v3: true }); if (!o.keyDate && !o.evS) { if (isEvt(o)) { o.evS = last; o.evE = last; o.keyDate = last; o.keyLabel = '행사일'; } else { o.keyDate = last; o.keyLabel = o.keyLabel || '마감일'; } } if (o.showCal === undefined) o.showCal = true; PLOCK++; try { put('projects', p.id, o); } finally { PLOCK--; } });
 }
 
 /* ========== 빠른 입력 해석 ========== */
@@ -863,7 +894,8 @@ function vToday(){
   const projNext = V.mode === 'personal' ? [] : Object.values(S.projects).filter(p => (p.status || 'active') === 'active').map(p => ({ p, st: (p.steps || []).filter(x => !stepDone(x)).sort((a, b) => (a.due || 'z') < (b.due || 'z') ? -1 : 1)[0] })).filter(x => x.st).slice(0, 5);
   const leave = leaveOn(s), hol = holName(s);
   const running = V.running;
-  const header = (hol || leave) ? `<div class="warnbox ok">${hol ? h(hol) + ' · 휴일' : ''}${leave ? LT[leave.ltype] + (HOURLY.includes(leave.ltype) ? ' ' + fh(leave.hours) : '') : ''} — ${V.mode === 'personal' ? '개인 시간으로 계산돼요' : '업무 가용 ' + fh(workCap(s))}</div>` : '';
+  const pc = projCal(s);
+  const header = (pc.length ? `<div class="fl">${pc.map(x => `<button class="chip ${x.k === 'evt' ? 'c-evt' : 'c-w'}" style="border:0;cursor:pointer;font-size:12px;padding:5px 10px" data-act="peekProject" data-id="${x.p.id}">${h(x.t)}</button>`).join('')}${evBlock(s) ? '<span class="muted">행사 기간이라 다른 업무 배정은 막혀 있어요</span>' : ''}</div>` : '') + ((hol || leave) ? `<div class="warnbox ok">${hol ? h(hol) + ' · 휴일' : ''}${leave ? LT[leave.ltype] + (HOURLY.includes(leave.ltype) ? ' ' + fh(leave.hours) : '') : ''} — ${V.mode === 'personal' ? '개인 시간으로 계산돼요' : '업무 가용 ' + fh(workCap(s))}</div>` : '');
   return `${isToday ? backupBanner() : ''}${resSummary(s, s, isToday ? '오늘' : mdw(s))}${header}
   ${running ? `<div class="warnbox bad" style="display:flex;align-items:center;gap:10px">⏱ 기록 중: ${h(running.title)} (${running.start} 시작)<span class="grow"></span><button class="btn sm pri" data-act="stopRun">종료하고 저장</button><button class="btn sm" data-act="cancelRun">취소</button></div>` : ''}
   <div class="grid3">
@@ -988,12 +1020,13 @@ function vWeek(){
   const [a, b] = V.mode === 'work' ? [8, 21] : [7, 23], PX = 40;
   const head = days.map(s => {
     const cap = workCap(s), asg = assignedWork(s), over = asg > cap && asg > 0, today = s === TODAY();
-    const extra = V.mode === 'personal' ? `<span class="muted">개인 ${fh(personalLogged(s))}</span>` : (fullOff(s) ? `<span class="muted">${h(holName(s) || (leaveOn(s) ? LT[leaveOn(s).ltype] : '휴무'))}</span>` : `<div class="row" style="gap:6px"><div class="mini"><i style="width:${Math.min(100, asg / (cap || 1) * 100)}%;background:${over ? 'var(--bad)' : 'var(--acc)'}"></i></div><span style="font-size:11px;white-space:nowrap;${over ? 'color:var(--bad);font-weight:700' : 'color:var(--fg2)'}">${r2(asg)}/${r2(cap)}</span></div>`);
-    return `<div class="${fullOff(s) ? 'off' : ''} ${today ? 'today-bg' : ''}"><button class="d" data-act="goDay" data-s="${s}"><span style="font-size:13px;white-space:nowrap"><b>${W[dow(s)]}</b> ${today ? `<span class="tag-today">${md(s)}</span>` : `<span style="color:var(--fg2)">${md(s)}</span>`}</span>${extra}</button></div>`;
+    const extra = V.mode === 'personal' ? `<span class="muted">개인 ${fh(personalLogged(s))}</span>` : (fullOff(s) ? `<span class="muted">${h(holName(s) || (leaveOn(s) ? LT[leaveOn(s).ltype] : evBlock(s) ? '행사 · 배정 없음' : '휴무'))}</span>` : `<div class="row" style="gap:6px"><div class="mini"><i style="width:${Math.min(100, asg / (cap || 1) * 100)}%;background:${over ? 'var(--bad)' : 'var(--acc)'}"></i></div><span style="font-size:11px;white-space:nowrap;${over ? 'color:var(--bad);font-weight:700' : 'color:var(--fg2)'}">${r2(asg)}/${r2(cap)}</span></div>`);
+    return `<div class="${offLook(s) ? 'off' : ''} ${today ? 'today-bg' : ''}"><button class="d" data-act="goDay" data-s="${s}"><span style="font-size:13px;white-space:nowrap"><b>${W[dow(s)]}</b> ${today ? `<span class="tag-today">${md(s)}</span>` : `<span style="color:var(--fg2)">${md(s)}</span>`}</span>${extra}</button></div>`;
   }).join('');
   const allday = days.map(s => {
     const ch = [];
     const hol = holName(s); if (hol) ch.push(`<span class="chip c-g">${h(hol)}</span>`);
+    projCal(s).forEach(x => ch.push(`<button class="chip ${x.k === 'evt' ? 'c-evt' : 'c-w'}" style="border:0;cursor:pointer;overflow:hidden;text-overflow:ellipsis;font-weight:700" data-act="peekProject" data-id="${x.p.id}" title="${h(x.t)}">${h(x.t)}</button>`));
     const l = leaveOn(s); if (l) ch.push(`<span class="chip c-g">${LT[l.ltype]}</span>`);
     itemsOn(s).filter(i => vis(i.scope) && (!i.start || i.allDay)).forEach(i => ch.push(`<button draggable="true" data-drag="${i.id}" class="chip ${i.scope === 'personal' ? 'c-p' : (isOverdue(i) ? 'c-bad' : 'c-w')}" style="border:0;cursor:pointer;max-width:100%;overflow:hidden;text-overflow:ellipsis;${i.done ? 'opacity:.55;text-decoration:line-through' : ''}" data-act="edit" data-id="${i.id}">${h(i.title)}</button>`));
     routineInst(s).filter(x => vis(x.scope) && !x.time).forEach(x => ch.push(`<button class="chip ${x.scope === 'personal' ? 'c-p' : 'c-w'}" style="border:0;cursor:pointer;overflow:hidden;text-overflow:ellipsis;${x.done ? 'opacity:.55' : ''}" data-act="editRoutine" data-id="${x.rid}">↻ ${h(x.title)}</button>`));
@@ -1002,12 +1035,12 @@ function vWeek(){
       Object.values(S.projects).filter(p => (p.status || 'active') === 'active').forEach(p => (p.steps || []).filter(x => x.due === s && (x.subs || []).length && !stepDone(x)).forEach(x => ch.push(`<button class="chip c-dash" style="background:transparent;cursor:pointer;overflow:hidden;text-overflow:ellipsis" data-act="peekProject" data-id="${p.id}">◆ ${h(x.t)}</button>`)));
     }
     const show = ch.slice(0, 3); if (ch.length > 3) show.push(`<button class="chip c-g" style="border:0;cursor:pointer" data-act="goDay" data-s="${s}">+${ch.length - 3}</button>`);
- return `<div class="${fullOff(s) ? 'off' : ''} dz" data-drop="${s}" data-act="goDay" data-s="${s}" title="${mdw(s)} 일간 보기">${show.join('')}</div>`;
+ return `<div class="${offLook(s) ? 'off' : ''} dz" data-drop="${s}" data-act="goDay" data-s="${s}" title="${mdw(s)} 일간 보기">${show.join('')}</div>`;
   }).join('');
   let body = `<div style="position:relative;height:${(b - a) * PX}px">${[...Array(b - a)].map((_, i) => `<div style="position:absolute;right:6px;top:${i * PX + 2}px;font:500 10px var(--mono);color:var(--fg3)">${pad(a + i)}</div>`).join('')}</div>`;
   body += days.map(s => {
     const w = ST().work, off = fullOff(s);
-    let col = `<div class="day dz ${off ? 'off' : ''} ${s === TODAY() ? 'today-bg' : ''}" data-drop="${s}" data-a="${a}" data-px="${PX}" data-act="goDay" data-s="${s}" title="${mdw(s)} 일간 보기" style="height:${(b - a) * PX}px;background-image:repeating-linear-gradient(to bottom,var(--line2) 0 1px,transparent 1px ${PX}px)">`;
+    let col = `<div class="day dz ${offLook(s) ? 'off' : ''} ${s === TODAY() ? 'today-bg' : ''}" data-drop="${s}" data-a="${a}" data-px="${PX}" data-act="goDay" data-s="${s}" title="${mdw(s)} 일간 보기" style="height:${(b - a) * PX}px;background-image:repeating-linear-gradient(to bottom,var(--line2) 0 1px,transparent 1px ${PX}px)">`;
     if (!off && V.mode !== 'personal') col += `<div class="blk lunch" style="left:0;right:0;top:${(hm(w.lunchS) - a) * PX}px;height:${(hm(w.lunchE) - hm(w.lunchS)) * PX}px;border-radius:0"></div><div style="position:absolute;left:0;right:0;top:${(workWindow(s)[1] - a) * PX}px;border-top:1.5px solid var(--fg4)"></div>`;
     if (!off && V.mode === 'personal') { const [x1, x2] = workWindow(s), lS = hm(w.lunchS), lE = hm(w.lunchE);
       const segs = lS >= x1 && lE <= x2 ? [[x1, lS], [lE, x2]] : [[x1, x2]];
@@ -1025,6 +1058,7 @@ function vWeek(){
 function monthEvents(s){
   const ev = [];
   const hol = holName(s); const l = leaveOn(s);
+  projCal(s).forEach(x => ev.push([x.k === 'evt' ? 'evt' : 'w', x.t, 'peekProject', x.p.id]));
   if (l) ev.push(['g', LT[l.ltype], 'goDay', s]);
   itemsOn(s).filter(i => vis(i.scope)).forEach(i => ev.push([i.scope === 'personal' ? 'p' : (isOverdue(i) ? 'bad' : 'w'), i.title, 'edit', i.id, i.done]));
   if (V.mode !== 'personal') {
@@ -1041,8 +1075,8 @@ function vMonth(){
   let cells = '';
   for (let i = 0; i < weeks * 7; i++) {
     const s = add(start, i), inM = +s.slice(5, 7) === m, { hol, ev } = monthEvents(s), today = s === TODAY();
-    const C = { w: 'c-w', p: 'c-p', warn: 'c-warn', bad: 'c-bad', g: 'c-g', dash: 'c-dash' };
-    const DC = { w: 'var(--acc)', p: 'var(--p)', warn: 'var(--warn)', bad: 'var(--bad)', g: 'var(--fg4)', dash: 'var(--fg3)' };
+    const C = { evt: 'c-evt', w: 'c-w', p: 'c-p', warn: 'c-warn', bad: 'c-bad', g: 'c-g', dash: 'c-dash' };
+    const DC = { evt: 'var(--acc)', w: 'var(--acc)', p: 'var(--p)', warn: 'var(--warn)', bad: 'var(--bad)', g: 'var(--fg4)', dash: 'var(--fg3)' };
  cells += `<button class="mc ${inM ? '' : 'out'} ${isOff(s) ? 'off' : ''} ${today ? 'today-bg' : ''}" data-drop="${s}" data-act="goWeek" data-s="${s}" aria-label="${mdw(s)} 주간 보기">
       <span class="n">${today ? `<span class="tag-today">${P(s).getDate()}</span>` : P(s).getDate()}${hol ? `<span class="h">${h(hol)}</span>` : ''}</span>
       ${ev.slice(0, 3).map(e => `<span class="ev chip ${C[e[0]]}" ${e[2] === 'edit' ? `draggable="true" data-drag="${e[3]}"` : ''} style="font-weight:500;cursor:pointer;${e[4] ? 'opacity:.55;text-decoration:line-through' : ''}" data-act="${e[2]}" data-id="${e[3]}" data-s="${e[3]}" title="${h(e[1])}">${h(e[1])}</span>`).join('')}${ev.length > 3 ? `<span class="muted ev" style="font-size:11px;cursor:pointer" data-act="goDay" data-s="${s}">+${ev.length - 3} 더보기</span>` : ''}
@@ -1062,12 +1096,13 @@ function vYear(){
   let rows = '';
   const dayMap = {};
   const addEv = (s, t, k) => { if (s.slice(0, 4) != y) return; (dayMap[s] = dayMap[s] || []).push([t, k]); }; // 표시용
+  if (V.mode !== 'personal') Object.values(S.projects).forEach(p => { if (!projOnCal(p)) return; if (isEvt(p)) { const r = evRange(p); if (r) for (let d = r[0]; d <= r[1]; d = add(d, 1)) addEv(d, '행사 · ' + p.name, 'evt'); } else if (p.keyDate) addEv(p.keyDate, '◆ ' + (p.keyLabel || '마감일') + ' · ' + p.name, 'w'); });
   Object.values(S.items).forEach(i => { if (!i.date) return; if (i.kind === 'leave') addEv(i.date, LT[i.ltype], 'lv'); else if ((i.kind === 'task' || i.kind === 'event') && vis(i.scope)) addEv(i.date, i.title, i.scope === 'personal' ? 'p' : 'w'); });
   if (V.mode !== 'personal') {
     Object.values(S.delegs).forEach(d => { if (d.due && !['closed','stopped'].includes(d.status)) addEv(d.due, d.title, 'warn'); });
     Object.values(S.projects).forEach(p => { if ((p.status || 'active') === 'active') (p.steps || []).forEach(x => { if (x.due && (x.subs || []).length && !stepDone(x)) addEv(x.due, '◆ ' + x.t, 'w'); }); });
   }
-  const K = { w: 'background:var(--acc-soft);color:var(--acc-fg)', p: 'background:var(--p-soft);color:var(--p-fg)', warn: 'background:var(--warn-soft);color:var(--warn)', lv: 'background:var(--fg2);color:var(--bg);font-weight:600' };
+  const K = { evt: 'background:var(--acc);color:#fff;font-weight:600', w: 'background:var(--acc-soft);color:var(--acc-fg)', p: 'background:var(--p-soft);color:var(--p-fg)', warn: 'background:var(--warn-soft);color:var(--warn)', lv: 'background:var(--fg2);color:var(--bg);font-weight:600' };
   for (let d = 1; d <= 31; d++) {
     rows += `<tr><td class="dn">${d}</td>`;
     for (let m = 1; m <= 12; m++) {
@@ -1143,7 +1178,7 @@ function vProject(){
   const prog = p => { const u = units(p); return [u.filter(x => x.done).length, u.length]; };
   return `<div class="fl">${F.map(f => `<button class="pill ${V.fProject === f[0] ? 'on' : ''}" data-act="fProject" data-f="${f[0]}">${f[1]} ${all.filter(f[2]).length}</button>`).join('')}<span class="grow"></span><button class="btn" data-act="newProject">빈 프로젝트</button><button class="btn pri" data-act="copyProject" ${all.length ? '' : 'disabled'}>+ 기존 것 복사해 만들기</button></div>
   <div class="two" style="grid-template-columns:minmax(0,380px) minmax(0,1fr)"><div class="col" style="gap:10px">
-  ${list.length ? list.map(p => { const [d, n] = prog(p); const nx = units(p).filter(x => !x.done && x.due).sort((a, b) => a.due < b.due ? -1 : 1)[0]; return `<button class="card" style="cursor:pointer;text-align:left;${sel && sel.id === p.id ? 'border:1.5px solid var(--acc)' : ''}" data-act="selProject" data-id="${p.id}"><span class="row"><span class="muted">${h(p.type || '프로젝트')}${p.star ? ' · ★' : ''}</span><span class="grow"></span><span class="chip ${(p.status || 'active') === 'active' && nx && nx.due <= add(TODAY(), 3) ? 'c-warn' : PS[p.status || 'active'][1]}">${(p.status || 'active') === 'active' && nx ? dday(nx.due) : PS[p.status || 'active'][0]}</span></span><b style="font-size:14px">${h(p.name)}</b><span class="row" style="gap:8px"><span class="mini"><i style="width:${n ? d / n * 100 : 0}%;background:var(--acc)"></i></span><span class="muted">${d} / ${n}</span></span></button>`; }).join('') : `<div class="card"><span class="muted">프로젝트가 없어요. "빈 프로젝트"로 시작하거나 기존 것을 복사하세요.</span></div>`}
+  ${list.length ? list.map(p => { const [d, n] = prog(p); const nx = units(p).filter(x => !x.done && x.due).sort((a, b) => a.due < b.due ? -1 : 1)[0]; return `<button class="card" style="cursor:pointer;text-align:left;${sel && sel.id === p.id ? 'border:1.5px solid var(--acc)' : ''}" data-act="selProject" data-id="${p.id}"><span class="row"><span class="muted">${h(p.type || '프로젝트')}${p.star ? ' · ★' : ''}</span><span class="grow"></span><span class="chip ${(p.status || 'active') === 'active' && nx && nx.due <= add(TODAY(), 3) ? 'c-warn' : PS[p.status || 'active'][1]}">${(p.status || 'active') === 'active' && nx ? dday(nx.due) : PS[p.status || 'active'][0]}</span></span><b style="font-size:14px">${h(p.name)}</b><span class="muted">${h(projDateTxt(p))}</span><span class="row" style="gap:8px"><span class="mini"><i style="width:${n ? d / n * 100 : 0}%;background:var(--acc)"></i></span><span class="muted">${d} / ${n}</span></span></button>`; }).join('') : `<div class="card"><span class="muted">프로젝트가 없어요. "빈 프로젝트"로 시작하거나 기존 것을 복사하세요.</span></div>`}
   </div><div>${sel ? projectDetail(sel) : ''}</div></div>`;
 }
 function whoSel(p, i, j, who){ return `<select class="in who" id="ps-${p.id}-${i}-${j}-w" data-act-change="pstepW" data-id="${p.id}" data-i="${i}" data-j="${j}" aria-label="담당"><option value="">나</option>${ST().staff.map(s => `<option value="${s.id}" ${who === s.id ? 'selected' : ''}>${h(s.n)}</option>`).join('')}</select>`; }
@@ -1167,7 +1202,8 @@ function projectDetail(p){
   const st = p.status || 'active';
   const steps = (p.steps || []).map((x, i) => ({ x, i })).sort((a, b) => (a.x.due || 'z') < (b.x.due || 'z') ? -1 : 1);
   return `<section class="card"><div class="row" style="align-items:flex-start;flex-wrap:wrap"><div style="flex:1;min-width:180px"><div class="muted">${h(p.type || '프로젝트')} · ${h(areaName(p.area))}</div><h2 style="font-size:19px">${h(p.name)}</h2></div>
-  <div class="fl"><button class="btn sm" data-act="copyProject" data-id="${p.id}">복사해 새로 만들기</button>${st === 'active' ? `<button class="btn sm" data-act="pstat" data-id="${p.id}" data-s="hold">보류</button><button class="btn sm" data-act="pstat" data-id="${p.id}" data-s="stop">중단</button><button class="btn sm pri" data-act="pstat" data-id="${p.id}" data-s="done">완료</button>` : `<button class="btn sm" data-act="presume" data-id="${p.id}">${st === 'hold' ? '재개' : '다시 진행'}</button>`}<button class="btn sm ghost" data-act="editProjectMeta" data-id="${p.id}">이름·유형</button></div></div>
+  <div class="fl"><button class="btn sm" data-act="copyProject" data-id="${p.id}">복사해 새로 만들기</button>${st === 'active' ? `<button class="btn sm" data-act="pstat" data-id="${p.id}" data-s="hold">보류</button><button class="btn sm" data-act="pstat" data-id="${p.id}" data-s="stop">중단</button><button class="btn sm pri" data-act="pstat" data-id="${p.id}" data-s="done">완료</button>` : `<button class="btn sm" data-act="presume" data-id="${p.id}">${st === 'hold' ? '재개' : '다시 진행'}</button>`}<button class="btn sm ghost" data-act="editProjectMeta" data-id="${p.id}">기본 정보 · 날짜</button></div></div>
+  <div class="fl"><button class="chip ${isEvt(p) ? 'c-evt' : 'c-w'}" style="border:0;cursor:pointer;font-size:12px;padding:4px 10px" data-act="editProjectMeta" data-id="${p.id}">${h(projDateTxt(p))}</button><span class="muted">${p.showCal === false ? '캘린더에 표시 안 함' : '업무 캘린더에 표시 중'}${isEvt(p) && p.block !== false ? ' · 행사 기간 업무 배정 막음' : ''}</span></div>
   ${st !== 'active' ? `<div class="warnbox ${st === 'done' ? 'ok' : ''}">${PS[st][0]} · ${p.statusAt ? md(p.statusAt) : ''}${p.statusMemo ? ' · ' + h(p.statusMemo) : ''}${st === 'hold' ? ' · 기한이 해제되어 오늘·주간 화면과 리소스에서 빠져 있어요' : ''}</div>` : ''}
   <div class="ch"><b style="font-size:14px">단계 · 하위업무</b><span class="muted">${units(p).filter(x => x.done).length} / ${units(p).length} 완료 · 담당 "나" = 내 할 일, 직원 = 위임으로 자동 등록</span></div>
   <div class="steps">${steps.map(({ x, i }) => stepRow(p, x, i)).join('')}</div>
@@ -1640,24 +1676,34 @@ function openLeave(pre){
 }
 
 /* 프로젝트: 새로 / 복사 / 상태 */
+const STEPS_P = ['기획 · 구성안', '디자인 · 제작', '검수 · 수정', '오픈 · 광고 연결'], STEPS_E = ['기획 · 부스 구성', '홍보물 · 인쇄물 제작', '사전 홍보 · 광고', '준비물 · 현장 점검'];
+function prevWorkday(s){ let k = add(s, -1); for (let i = 0; i < 20 && isOff(k); i++) k = add(k, -1); return k; }
+function snapWd(s){ let k = s; for (let i = 0; i < 10 && isOff(k); i++) k = add(k, -1); return k; } // 주말·공휴일이면 앞 근무일로
+function npAnchor(f){ return f.type === '행사' && f.base ? prevWorkday(f.base) : f.base; } // 행사는 시작 전날(근무일)까지 준비 단계를 끝내도록
+function calData(f){ // 모달 값 → 저장 필드
+  if (f.type === '행사') return { evS: f.base || null, evE: f.evE && f.evE >= f.base ? f.evE : (f.base || null), keyDate: f.base || null, keyLabel: '행사일', block: f.block !== false, showCal: f.showCal !== false };
+  return { keyDate: f.base || null, keyLabel: (f.keyLabelC || '').trim() || f.keyLabel || '마감일', evS: null, evE: null, showCal: f.showCal !== false };
+}
 function editUnit(pid, i, j, fn){ const p = clean(S.projects[pid]); const st = p.steps[i]; if (!st) return; fn(j < 0 ? st : st.subs[j]); put('projects', pid, p); }
 function openProjectNew(copyFrom){
   const isCopy = copyFrom !== null && copyFrom !== undefined && Object.keys(S.projects).length > 0;
   const srcP = isCopy ? (S.projects[copyFrom] || Object.values(S.projects).sort((x, y) => (y.star ? 1 : 0) - (x.star ? 1 : 0))[0]) : null;
-  const f = { mode: isCopy ? 'copy' : 'blank', src: srcP ? srcP.id : (Object.values(S.projects)[0] || {}).id, name: srcP ? srcP.name + ' (복사)' : '', type: '프로젝트', area: '', base: add(TODAY(), 30),
-    steps: ['기획 · 구성안', '디자인 · 제작', '검수 · 수정', '오픈 · 광고 연결'].map(t => ({ t })), gap: 5 };
+  const f = { mode: isCopy ? 'copy' : 'blank', src: srcP ? srcP.id : (Object.values(S.projects)[0] || {}).id, name: srcP ? srcP.name + ' (복사)' : '', type: srcP ? srcP.type || '프로젝트' : '프로젝트', area: '', base: add(TODAY(), 30), keyLabel: srcP ? srcP.keyLabel || '마감일' : '마감일', showCal: true, block: true, evE: '',
+    steps: STEPS_P.map(t => ({ t })), gap: 5 };
   openModal({ title: isCopy ? '복사해 새로 만들기' : '새 프로젝트 · 행사', cls: 'wide', f, focus: 'np-name', body(){
     const src = S.projects[f.src];
     let preview = [];
     if (f.mode === 'copy' && src) {
       const dates = (src.steps || []).filter(x => x.due).map(x => x.due).sort(); const anchor = dates[dates.length - 1];
-      preview = (src.steps || []).map(x => ({ t: x.t + ((x.subs || []).length ? ' (하위 ' + x.subs.length + ')' : ''), from: x.due, to: x.due && anchor ? add(f.base, Math.round((P(x.due) - P(anchor)) / 864e5)) : null, who: x.who, dur: x.dur, area: x.area }));
-    } else preview = f.steps.map((x, i) => ({ t: x.t, to: add(f.base, -(f.steps.length - 1 - i) * f.gap) }));
+      preview = (src.steps || []).map(x => ({ t: x.t + ((x.subs || []).length ? ' (하위 ' + x.subs.length + ')' : ''), from: x.due, to: x.due && anchor ? snapWd(add(npAnchor(f), Math.round((P(x.due) - P(anchor)) / 864e5))) : null, who: x.who, dur: x.dur, area: x.area }));
+    } else preview = f.steps.map((x, i) => ({ t: x.t, to: snapWd(add(npAnchor(f), -(f.steps.length - 1 - i) * f.gap)) }));
     let cap = 0, asg = 0; for (let s = TODAY(); s <= f.base; s = add(s, 1)) { cap += workCap(s); asg += assignedWork(s); }
     return `<div class="fl"><div class="seg"><button class="${f.mode === 'blank' ? 'on' : ''}" data-act="npSet" data-k="mode" data-v="blank">빈 프로젝트</button><button class="${f.mode === 'copy' ? 'on' : ''}" data-act="npSet" data-k="mode" data-v="copy" ${Object.keys(S.projects).length ? '' : 'disabled'}>기존 것 복사</button></div></div>
     ${f.mode === 'copy' ? `<div class="fl"><span class="muted">원본</span>${Object.values(S.projects).sort((a, b) => (b.star ? 1 : 0) - (a.star ? 1 : 0)).map(p => opt(f.src === p.id, 'npSet', `data-k="src" data-v="${p.id}"`, (p.star ? '★ ' : '') + h(p.name))).join('')}</div>` : ''}
-    <div class="fgrid"><label class="f">이름<input class="in" id="np-name" data-f="name" value="${h(f.name)}" placeholder="예: 동남아 랜딩페이지"></label><label class="f">${f.mode === 'copy' ? '마지막 단계 기준일' : '마감 · 행사일'}<input class="in" type="date" id="np-base" data-f="base" value="${h(f.base)}"></label></div>
-    <div class="fl">${['프로젝트','행사','추적'].map(t => opt(f.type === t, 'npSet', `data-k="type" data-v="${t}"`, t)).join('')}<select class="in" id="np-area" data-f="area" style="width:auto"><option value="">대표 분류 없음</option>${ST().areas.map(a => `<option value="${a.id}" ${a.id === f.area ? 'selected' : ''}>${h(a.n)}</option>`).join('')}</select></div>
+    <label class="f">이름<input class="in" id="np-name" data-f="name" value="${h(f.name)}" placeholder="${f.type === '행사' ? '예: 하나투어 여행박람회' : '예: 동남아 랜딩페이지'}"></label>
+    <div class="fl">${[['프로젝트', '결과물을 만드는 일'], ['행사', '날짜가 정해진 박람회·설명회'], ['추적', '진행 상황만 챙길 일']].map(([t, d]) => opt(f.type === t, 'npSet', `data-k="type" data-v="${t}" title="${d}"`, t)).join('')}<select class="in" id="np-area" data-f="area" style="width:auto"><option value="">대표 분류 없음</option>${ST().areas.map(a => `<option value="${a.id}" ${a.id === f.area ? 'selected' : ''}>${h(a.n)}</option>`).join('')}</select></div>
+    ${calFields(f)}
+    <div class="muted">${f.mode === 'copy' ? '원본의 마지막 단계가 ' + (f.type === '행사' ? '행사 시작일' : '대표 날짜') + '에 맞춰지고, 나머지 단계도 같은 간격으로 옮겨져요.' : '단계 기한은 ' + (f.type === '행사' ? '행사 전날(근무일)' : '대표 날짜') + '에서 거꾸로 ' + f.gap + '일 간격으로 잡혀요.'}</div>
     <div class="tbl"><div class="tr hd" style="grid-template-columns:minmax(0,1fr) 90px 90px 28px"><span>단계</span><span>${f.mode === 'copy' ? '원본' : ''}</span><span>새 날짜</span><span></span></div>
     ${preview.map((x, i) => `<div class="tr" style="grid-template-columns:minmax(0,1fr) 90px 90px 28px"><span class="ell">${h(x.t)}</span><span class="muted">${x.from ? md(x.from) : ''}</span><b>${x.to ? mdw(x.to) : '—'}</b>${f.mode === 'blank' ? `<button class="xb" data-act="npDel" data-i="${i}" aria-label="삭제">×</button>` : '<span></span>'}</div>`).join('')}</div>
     ${f.mode === 'blank' ? `<div class="row"><input class="in" id="np-step" data-f="_s" value="${h(f._s || '')}" placeholder="단계 추가 (Enter)" data-enter="npAdd"><button class="btn" data-act="npAdd">+ 추가</button><span class="muted" style="white-space:nowrap">간격</span><input class="in" type="number" min="1" id="np-gap" data-f="gap" data-num="1" value="${f.gap}" style="width:70px"><span class="muted">일</span></div>` : ''}
@@ -1801,6 +1847,7 @@ function buildIcs(){
     ev.push(`BEGIN:VEVENT\r\nUID:${id}@workboard\r\nDTSTAMP:${dt(TODAY())}T000000\r\n${t ? `DTSTART;TZID=Asia/Seoul:${dt(s, t)}\r\nDTEND;TZID=Asia/Seoul:${dt(s, e || toHM(Math.min(23.99, hm(t) + 1)))}` : `DTSTART;VALUE=DATE:${dt(s)}\r\nDTEND;VALUE=DATE:${dt(add(s, 1))}`}\r\nSUMMARY:${esc(title)}\r\n${desc ? 'DESCRIPTION:' + esc(desc) + '\r\n' : ''}${alarms}\r\nEND:VEVENT`); };
   const from = TODAY();
   Object.values(S.items).forEach(i => { if (!i.date || i.date < from) return; if ((i.kind === 'task' && !i.done) || i.kind === 'event') push(i.id, (i.scope === 'personal' ? '[개인] ' : '') + i.title, i.date, i.start, i.end, [memTxt(i), i.memo].filter(Boolean).join('\n')); if (i.kind === 'leave') push(i.id, LT[i.ltype], i.date); });
+  Object.values(S.projects).forEach(p => { if (!projOnCal(p) || (p.status || 'active') !== 'active') return; if (isEvt(p)) { const r = evRange(p); if (r && r[1] >= from) ev.push(`BEGIN:VEVENT\r\nUID:${p.id}-ev@workboard\r\nDTSTAMP:${dt(TODAY())}T000000\r\nDTSTART;VALUE=DATE:${dt(r[0])}\r\nDTEND;VALUE=DATE:${dt(add(r[1], 1))}\r\nSUMMARY:${esc('[행사] ' + p.name)}\r\n${['-P1W', '-P1D'].map(tr => `BEGIN:VALARM\r\nACTION:DISPLAY\r\nDESCRIPTION:${esc(p.name)}\r\nTRIGGER:${tr}\r\nEND:VALARM`).join('\r\n')}\r\nEND:VEVENT`); } else if (p.keyDate && p.keyDate >= from) push(p.id + '-key', '[' + (p.keyLabel || '마감일') + '] ' + p.name, p.keyDate); });
   Object.values(S.delegs).forEach(d => { if (d.due && d.due >= from && !['closed','stopped'].includes(d.status)) push(d.id, '[위임 마감] ' + staffName(d.staff) + ' · ' + d.title, d.due); });
   Object.values(S.projects).forEach(p => { if ((p.status || 'active') === 'active') (p.steps || []).forEach((x, i) => { if (x.due && x.due >= from && (x.subs || []).length && !stepDone(x)) push(p.id + '-' + (x.id || i), '[' + p.name + '] ◆ ' + x.t + ' 마감', x.due); }); });
   return `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//workboard//KO\r\nCALSCALE:GREGORIAN\r\nX-WR-CALNAME:워크보드\r\n${ev.join('\r\n')}\r\nEND:VCALENDAR\r\n`;
@@ -1849,7 +1896,7 @@ const A = {
   peekDeleg: d => { const id = d.id; if (!S.delegs[id]) return; openModal({ title: '위임 상세', cls: 'wide', live: true, alive: () => !!S.delegs[id], body: () => delegDetail(S.delegs[id]) + `<div class="foot"><span class="grow"></span><button class="btn sm" data-act="openDeleg" data-id="${id}">위임 화면에서 보기</button></div>` }); },
   peekProject: d => { const id = d.id; if (!S.projects[id]) return; openModal({ title: '프로젝트 상세', cls: 'wide', live: true, alive: () => !!S.projects[id], body: () => projectDetail(S.projects[id]) }); },
   yCell: d => { const ev = yearEvents(d.s); if (!ev.length) { V.cur = d.s; go('month'); return; } if (ev.length === 1 && ev[0][2] !== 'goDay') { A[ev[0][2]]({ id: ev[0][3], s: ev[0][3] }); return; }
-    openModal({ title: mdw(d.s) + ' 일정', body: () => `<div class="col" style="gap:4px">${yearEvents(d.s).map(e => `<button class="item" style="border:1px solid var(--line);width:100%;text-align:left;align-items:center" data-act="${e[2]}" data-id="${e[3]}" data-s="${e[3]}"><span class="chip ${({ w: 'c-w', p: 'c-p', warn: 'c-warn', bad: 'c-bad', g: 'c-g', dash: 'c-dash' })[e[0]] || 'c-g'}">${({ w: '업무', p: '개인', warn: '위임', bad: '지연', g: '휴가', dash: '마감' })[e[0]] || ''}</span><span style="flex:1;font-size:13px;${e[4] ? 'text-decoration:line-through;color:var(--fg3)' : ''}">${h(e[1])}</span><span class="muted">›</span></button>`).join('')}</div>
+    openModal({ title: mdw(d.s) + ' 일정', body: () => `<div class="col" style="gap:4px">${yearEvents(d.s).map(e => `<button class="item" style="border:1px solid var(--line);width:100%;text-align:left;align-items:center" data-act="${e[2]}" data-id="${e[3]}" data-s="${e[3]}"><span class="chip ${({ evt: 'c-evt', w: 'c-w', p: 'c-p', warn: 'c-warn', bad: 'c-bad', g: 'c-g', dash: 'c-dash' })[e[0]] || 'c-g'}">${({ evt: '행사', w: '업무', p: '개인', warn: '위임', bad: '지연', g: '휴가', dash: '마감' })[e[0]] || ''}</span><span style="flex:1;font-size:13px;${e[4] ? 'text-decoration:line-through;color:var(--fg3)' : ''}">${h(e[1])}</span><span class="muted">›</span></button>`).join('')}</div>
     <div class="foot"><button class="btn" data-act="goDay" data-s="${d.s}">이 날 일간 보기</button><span class="grow"></span><button class="btn pri" data-act="goMonth" data-s="${d.s}">${+d.s.slice(5, 7)}월 월간 보기</button></div>` }); },
   guide: async d => { const x = S.delegs[d.id]; const g = (x.guides || []).map((y, i) => i === +d.i ? { t: y.t, ok: !y.ok } : y); await put('delegs', x.id, Object.assign({}, x, { guides: g })); },
   dstat: async d => { const x = S.delegs[d.id]; const L = { ack: '직원 확인', doing: '진행 중', review: '완료 보고', closed: '검수 완료', redo: '수정 요청', stopped: '취소' }; const n = Object.assign({}, x, { status: d.s, log: (x.log || []).concat([{ at: TODAY(), t: L[d.s] }]) }); if (d.s === 'redo') { n.guides = (x.guides || []); n.redoDue = nextWorkday(TODAY()); } await put('delegs', x.id, n); toast(L[d.s]); },
@@ -1868,8 +1915,15 @@ const A = {
   psubAdd: async d => { const el = $('psub-' + d.id + '-' + d.i); const t = el && el.value.trim(); if (!t) return; editUnit(d.id, +d.i, -1, u => { const first = !(u.subs || []).length; u.subs = (u.subs || []).concat([{ t, due: null, who: first ? (u.who || '') : '', done: false, dur: first && u.dur != null ? u.dur : null }]); if (first) { u.who = ''; u.done = false; } }); setTimeout(() => { const e2 = $('psub-' + d.id + '-' + d.i); if (e2) e2.focus(); }, 30); },
   pdelete: d => openModal({ title: '프로젝트 삭제', body: () => `<span>"${h(S.projects[d.id].name)}"을 삭제할까요? 단계와 메모가 모두 지워져요. 기록을 남기려면 "완료"나 "중단"을 쓰세요.</span><div class="foot"><span class="grow"></span><button class="btn" data-act="close">취소</button><button class="btn danger" data-act="pdeleteOk" data-id="${d.id}">삭제</button></div>` }),
   pdeleteOk: async d => { V.selProject = null; closeModal(); await undoable('프로젝트를 삭제했어요', () => { PLOCK++; try { Object.values(S.items).filter(i => i.proj === d.id && !i.done).forEach(i => del('items', i.id)); } finally { PLOCK--; } return del('projects', d.id); }); },
-  editProjectMeta: d => { const p = S.projects[d.id]; const f = { name: p.name, type: p.type || '프로젝트', area: p.area || '' }; openModal({ title: '이름 · 유형', f, body: () => `<label class="f">이름<input class="in" id="pm-n" data-f="name" value="${h(f.name)}"></label><div class="fl">${['프로젝트','행사','추적'].map(t => opt(f.type === t, 'pmSet', `data-v="${t}"`, t)).join('')}</div><label class="f">대표 분류<select class="in" id="pm-a" data-f="area"><option value="">없음</option>${ST().areas.map(a => `<option value="${a.id}" ${a.id === f.area ? 'selected' : ''}>${h(a.n)}</option>`).join('')}</select></label><div class="foot"><span class="grow"></span><button class="btn pri" data-act="pmSave" data-id="${p.id}">저장</button></div>` }); },
-  pmSet: d => { M.f.type = d.v; renderModal(); }, pmSave: async d => { const p = S.projects[d.id]; await put('projects', p.id, Object.assign({}, p, M.f)); closeModal(); },
+  editProjectMeta: d => { const p = S.projects[d.id]; const kl = p.keyLabel || '마감일'; const f = { name: p.name, type: p.type || '프로젝트', area: p.area || '', base: (isEvt(p) ? p.evS : p.keyDate) || '', evE: p.evE || '', keyLabel: KEYLABELS.includes(kl) ? kl : '마감일', keyLabelC: KEYLABELS.includes(kl) || kl === '행사일' ? '' : kl, showCal: p.showCal !== false, block: p.block !== false, shift: true, _old: (isEvt(p) ? p.evS : p.keyDate) || '' };
+    openModal({ title: '기본 정보 · 날짜', cls: 'wide', f, body: () => `<label class="f">이름<input class="in" id="pm-n" data-f="name" value="${h(f.name)}"></label><div class="fl">${['프로젝트','행사','추적'].map(t => opt(f.type === t, 'pmSet', `data-v="${t}"`, t)).join('')}</div><label class="f">대표 분류<select class="in" id="pm-a" data-f="area"><option value="">없음</option>${ST().areas.map(a => `<option value="${a.id}" ${a.id === f.area ? 'selected' : ''}>${h(a.n)}</option>`).join('')}</select></label>
+    ${calFields(f)}
+    ${f._old && f.base && f._old !== f.base ? `<div class="fl">${opt(f.shift, 'cfT2', '', '남은 단계 기한도 ' + Math.round((P(f.base) - P(f._old)) / 864e5) + '일 같이 옮기기')}</div>` : ''}
+    <div class="foot"><span class="grow"></span><button class="btn pri" data-act="pmSave" data-id="${p.id}">저장</button></div>` }); },
+  cfT2: () => { M.f.shift = !M.f.shift; renderModal(); },
+  pmSet: d => { M.f.type = d.v; renderModal(); }, pmSave: async d => { const p = S.projects[d.id], f = M.f; const o = Object.assign({}, p, { name: f.name, type: f.type, area: f.area }, calData(f));
+    if (f.shift && f._old && f.base && f._old !== f.base) { const sh = Math.round((P(f.base) - P(f._old)) / 864e5); o.steps = (p.steps || []).map(x => { if (stepDone(x)) return x; const wd = x => { let k = add(x, sh); for (let i = 0; i < 10 && isOff(k); i++) k = add(k, -1); return k; }; const y = Object.assign({}, x); if (y.due) y.due = wd(y.due); y.subs = (y.subs || []).map(sb => (!sb.done && sb.due) ? Object.assign({}, sb, { due: wd(sb.due) }) : sb); return y; }); }
+    closeModal(); await undoable('저장했어요', () => put('projects', p.id, o)); },
   resPer: d => { V.resPer = d.p; render(); },
   simAdd: () => { const sm = V.sim; openEdit({ _new: true, kind: 'task', title: sm.name || '신규 업무', scope: 'work', date: sm.due, dur: +sm.h, checklist: [], prio: true }); },
   setTheme: d => { ls.set('wb.theme', d.v); render(); },
@@ -1924,14 +1978,15 @@ const A = {
     if (HOURLY.includes(f.ltype)) { f.hours = Math.round(+f.hours); if (!(f.hours >= 1)) { toast('사용 시간은 1시간 단위로 입력해 주세요.'); return; } }
     for (const i of itemsOn(f.date).filter(i => (i.scope || 'work') === 'work' && !i.done)) { const a = f.acts[i.id] || (partial ? 'keep' : 'next'); if (a === 'keep') continue; let nd = a === 'next' ? nextWorkday(f.date) : add(f.date, -1); if (a === 'prev') while (isOff(nd)) nd = add(nd, -1); await put('items', i.id, Object.assign({}, i, { date: nd, hist: (i.hist || []).concat([{ from: f.date, to: nd, why: LT[f.ltype], at: TODAY() }]) })); }
     await put('items', uid(), { kind: 'leave', ltype: f.ltype, date: f.date, hours: HOURLY.includes(f.ltype) ? +f.hours : null, memo: f.memo, created: Date.now() }); closeModal(); toast(LT[f.ltype] + ' 등록 · ' + mdw(f.date)); },
-  npSet: d => { M.f[d.k] = d.v; if (d.k === 'src') { const p = S.projects[d.v]; if (p) M.f.name = p.name + ' (복사)'; } renderModal(); },
+  npSet: d => { M.f[d.k] = d.v; if (d.k === 'type' && M.f.mode === 'blank') { const cur = M.f.steps.map(x => x.t).join('|'); if (d.v === '행사' && cur === STEPS_P.join('|')) M.f.steps = STEPS_E.map(t => ({ t })); if (d.v !== '행사' && cur === STEPS_E.join('|')) M.f.steps = STEPS_P.map(t => ({ t })); } if (d.k === 'src') { const p = S.projects[d.v]; if (p) { M.f.name = p.name + ' (복사)'; M.f.type = p.type || '프로젝트'; M.f.keyLabel = p.keyLabel || '마감일'; } } renderModal(); },
+  cfT: d => { M.f[d.k] = M.f[d.k] === false ? true : false; renderModal(); }, cfLabel: d => { M.f.keyLabel = d.v; M.f.keyLabelC = ''; renderModal(); },
   npDel: d => { M.f.steps = M.f.steps.filter((_, i) => i !== +d.i); renderModal(); },
   npAdd: () => { const t = (M.f._s || '').trim(); if (!t) return; M.f.steps = M.f.steps.concat([{ t }]); M.f._s = ''; renderModal(); const el = $('np-step'); if (el) el.focus(); },
   npSave: async () => { const f = M.f; const id = uid(); let steps;
-    if (f.mode === 'copy') { const src = S.projects[f.src]; if (!src) return; const dates = (src.steps || []).filter(x => x.due).map(x => x.due).sort(); const anchor = dates[dates.length - 1]; const mv = dd => dd && anchor ? add(f.base, Math.round((P(dd) - P(anchor)) / 864e5)) : null; steps = (src.steps || []).map(x => ({ t: x.t, due: mv(x.due), done: false, who: x.who || '', dur: x.dur || null, area: x.area || '', subs: (x.subs || []).map(sb => ({ t: sb.t, due: mv(sb.due), done: false, who: sb.who || '', dur: sb.dur != null ? sb.dur : null })) })); }
-    else steps = f.steps.map((x, i) => ({ t: x.t, due: add(f.base, -(f.steps.length - 1 - i) * (+f.gap || 5)), done: false, who: '' }));
+    if (f.mode === 'copy') { const src = S.projects[f.src]; if (!src) return; const dates = (src.steps || []).filter(x => x.due).map(x => x.due).sort(); const anchor = dates[dates.length - 1]; const mv = dd => dd && anchor ? snapWd(add(npAnchor(f), Math.round((P(dd) - P(anchor)) / 864e5))) : null; steps = (src.steps || []).map(x => ({ t: x.t, due: mv(x.due), done: false, who: x.who || '', dur: x.dur || null, area: x.area || '', subs: (x.subs || []).map(sb => ({ t: sb.t, due: mv(sb.due), done: false, who: sb.who || '', dur: sb.dur != null ? sb.dur : null })) })); }
+    else steps = f.steps.map((x, i) => ({ t: x.t, due: snapWd(add(npAnchor(f), -(f.steps.length - 1 - i) * (+f.gap || 5))), done: false, who: '' }));
     const src = f.mode === 'copy' ? S.projects[f.src] : null;
-    await put('projects', id, { name: f.name.trim() || '새 ' + f.type, type: f.type, area: f.area || (src && src.area) || '', status: 'active', steps, memo: src ? src.memo || '' : '', created: Date.now() });
+    await put('projects', id, Object.assign({ name: f.name.trim() || '새 ' + f.type, type: f.type, area: f.area || (src && src.area) || '', status: 'active', steps, memo: src ? src.memo || '' : '', created: Date.now(), showCal: f.showCal !== false }, calData(f)));
     V.selProject = id; V.fProject = 'live'; closeModal(); if (V.route !== 'project') go('project'); toast('만들었어요'); },
   psSet: d => { M.f[d.k] = d.k === 'star' ? !!d.v : d.v; renderModal(); },
   psSave: async () => { const f = M.f, p = S.projects[f.id]; let steps = p.steps || [];
