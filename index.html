@@ -213,7 +213,14 @@ textarea.in{height:auto;padding:8px 10px;resize:vertical;min-height:60px;line-he
 .menu-grid{display:flex;flex-direction:column;gap:8px}
 .empty{font-size:13px;color:var(--fg3);padding:10px 4px}
 .steps{display:flex;flex-direction:column}
-.step{display:grid;grid-template-columns:22px minmax(0,1fr) 92px 70px 28px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--line2);font-size:13px}
+.step{display:grid;grid-template-columns:22px minmax(0,1fr) auto auto;gap:8px;align-items:center;padding:6px 0;font-size:13px}
+.step .meta{display:flex;gap:6px;align-items:center}
+.step .meta input[type=date]{width:132px}
+.step .meta .hrs{width:64px}
+.step .meta .who{width:92px}
+.step.sub{padding-left:26px}
+.step.sub .cb{width:16px;height:16px}
+.sgroup{border-bottom:1px solid var(--line2);padding:2px 0}
 .step input.in{height:30px}
 .xb{width:28px;height:28px;border:0;background:transparent;color:var(--fg3);font-size:16px;border-radius:6px}
 .xb:hover{background:var(--surface2);color:var(--bad)}
@@ -222,7 +229,7 @@ textarea.in{height:auto;padding:8px 10px;resize:vertical;min-height:60px;line-he
 @media (max-width: 900px){
   #side{display:none}
   #wrap{padding:12px 16px calc(88px + env(safe-area-inset-bottom,0px))}
-  .grid3,.two{grid-template-columns:minmax(0,1fr)}
+  .grid3,.two{grid-template-columns:minmax(0,1fr)!important}
   .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
   .top h1{font-size:18px}
   .qa,.wide-only{display:none!important}
@@ -237,8 +244,10 @@ textarea.in{height:auto;padding:8px 10px;resize:vertical;min-height:60px;line-he
   .mc .ev{display:none}
   .mc .dots{display:flex!important}
   .dlg.drawer{width:100%}
-  .step{grid-template-columns:22px minmax(0,1fr) 80px 28px}
-  .step .who{display:none}
+  .step{grid-template-columns:22px minmax(0,1fr) auto;row-gap:4px}
+  .step .meta{grid-column:2 / 4;grid-row:2}
+  .step .meta input[type=date]{width:auto;flex:1;min-width:0}
+  .step.sub{padding-left:14px}
   .fgrid{grid-template-columns:minmax(0,1fr)}
 }
 .mc .dots{display:none;gap:2px;flex-wrap:wrap}
@@ -351,13 +360,18 @@ let BASE = null, UNSUB = [];
 function saveLocal(){ ls.set('wb.data', { settings: S.settings, items: S.items, routines: S.routines, delegs: S.delegs, projects: S.projects, flex: S.flex }); }
 function loadLocal(){ const d = ls.get('wb.data', null); if (d) { Object.assign(S, { settings: Object.assign({}, DEF_SETTINGS, d.settings || {}), items: d.items || {}, routines: d.routines || {}, delegs: d.delegs || {}, projects: d.projects || {}, flex: d.flex || {} }); } }
 function clean(o){ return JSON.parse(JSON.stringify(o)); }
+let PLOCK = 0; // 프로젝트 ↔ 할 일·위임 동기화 중 재귀 방지
 function put(col, id, data){
   data = clean(data); data.id = id; data.up = Date.now();
+  if (col === 'projects') data = normP(data);
   S[col][id] = data; scheduleRender();
   if (BASE) BASE.collection(col).doc(id).set(data).catch(failSave); else saveLocal();
+  if (!PLOCK) { if (col === 'projects') syncProject(data); else if ((col === 'items' || col === 'delegs') && data.proj) backProp(col, data); }
   return Promise.resolve();
 }
 function del(col, id){
+  const old = S[col][id];
+  if (!PLOCK && old && old.proj && old.punit && (col === 'items' || col === 'delegs')) removeUnit(old.proj, old.punit);
   delete S[col][id]; scheduleRender();
   if (BASE) BASE.collection(col).doc(id).delete().catch(failSave); else saveLocal();
   return Promise.resolve();
@@ -469,7 +483,6 @@ function assignedWork(s){
   let t = 0;
   itemsOn(s).forEach(i => { if ((i.scope || 'work') === 'work' && !i.allDay) t += evDur(i); });
   routineInst(s).forEach(x => { if (x.scope === 'work') t += x.dur; });
-  Object.values(S.projects).forEach(p => { if (p.status === 'active' || !p.status) (p.steps || []).forEach(st => { if (st.due === s && !st.done && st.dur) t += +st.dur; }); });
   return r2(t);
 }
 function areaHours(from, to, scope){
@@ -477,7 +490,6 @@ function areaHours(from, to, scope){
   for (let s = from; s <= to; s = add(s, 1)) {
     itemsOn(s).forEach(i => { if ((i.scope || 'work') === scope && !i.allDay) { const k = i.area || '_'; o[k] = (o[k] || 0) + evDur(i); } });
     routineInst(s).forEach(x => { if (x.scope === scope && (scope === 'work' || x.done)) { const k = x.area || '_'; o[k] = (o[k] || 0) + x.dur; } });
-    if (scope === 'work') Object.values(S.projects).forEach(p => (p.steps || []).forEach(st => { if (st.due === s && st.dur && !st.done) { const k = st.area || p.area || '_'; o[k] = (o[k] || 0) + +st.dur; } }));
     if (scope === 'personal') Object.values(S.items).forEach(i => { if (i.kind === 'extra' && i.date === s) { o._extra = (o._extra || 0) + Math.max(0, hm(i.end) - hm(i.start)); } });
   }
   return o;
@@ -536,6 +548,85 @@ function leaveBalance(){
   return { annualGrant: +an.grant || 0, annualUsed, annualLeft: (+an.grant || 0) - annualUsed, period: [pS, pE],
     posGranted, posUsed, posLeft: posGranted - posUsed, posByMonth, posStart: ps,
     flexLeft: fl, flexIn: fi, flexOut: fo, compLeft: cl, compIn: ci, compOut: co };
+}
+
+/* ========== 프로젝트 단계 · 하위업무 → 내 할 일 / 위임 자동 연결 ========== */
+const sid = () => Math.random().toString(36).slice(2, 8);
+function normP(p){ // 단계·하위업무에 id 부여, 하위업무가 있으면 단계 완료 = 하위 모두 완료
+  p.steps = (p.steps || []).map(st => { st = Object.assign({}, st); if (!st.id) st.id = sid(); st.subs = (st.subs || []).map(sb => Object.assign({ who: '', done: false }, sb, { id: sb.id || sid() })); if (st.subs.length) st.done = st.subs.every(sb => sb.done); return st; });
+  return p;
+}
+const stepDone = st => (st.subs || []).length ? st.subs.every(sb => sb.done) : !!st.done;
+function units(p){ // 실제로 할 일이 되는 단위: 하위업무, 또는 하위업무 없는 단계
+  const u = [];
+  (p.steps || []).forEach(st => {
+    if ((st.subs || []).length) st.subs.forEach(sb => u.push({ key: st.id + '/' + sb.id, t: sb.t, due: sb.due || st.due || null, who: sb.who || '', done: !!sb.done, dur: sb.dur, area: sb.area || st.area || p.area || '', stepT: st.t }));
+    else u.push({ key: st.id, t: st.t, due: st.due || null, who: st.who || '', done: !!st.done, dur: st.dur, area: st.area || p.area || '', stepT: '' });
+  });
+  return u;
+}
+function unitAt(p, key){ const [a, b] = key.split('/'); const st = (p.steps || []).find(x => x.id === a); if (!st) return null; if (!b) return st; return (st.subs || []).find(x => x.id === b) || null; }
+function differs(o, n){ return Object.keys(n).some(k => JSON.stringify(o[k] === undefined ? null : o[k]) !== JSON.stringify(n[k] === undefined ? null : n[k])); }
+function dropDeleg(d, why){
+  if (d.status === 'sent' && (d.log || []).length <= 1) del('delegs', d.id);
+  else if (!['closed','stopped'].includes(d.status)) put('delegs', d.id, Object.assign({}, d, { status: 'stopped', autoStop: true, log: (d.log || []).concat([{ at: TODAY(), t: why || '프로젝트에서 제외' }]) }));
+}
+function syncProject(p){
+  if (!p || !p.id || !S.projects[p.id]) return;
+  PLOCK++;
+  try {
+    const active = (p.status || 'active') === 'active';
+    const U = units(p), keys = new Set(U.map(u => u.key));
+    const its = Object.values(S.items).filter(i => i.proj === p.id), dls = Object.values(S.delegs).filter(d => d.proj === p.id);
+    its.forEach(i => { if (!keys.has(i.punit)) del('items', i.id); });
+    dls.forEach(d => { if (!keys.has(d.punit)) dropDeleg(d, '단계 삭제'); });
+    U.forEach(u => {
+      const it = its.find(i => i.punit === u.key), dl = dls.find(d => d.punit === u.key);
+      if (!u.who) { // 내 할 일
+        if (dl && !['closed','stopped'].includes(dl.status)) dropDeleg(dl, '담당 변경 → 나');
+        if (!active && !u.done) { if (it && !it.done) del('items', it.id); return; }
+        const data = { kind: 'task', scope: 'work', title: u.t, done: u.done, area: u.area, proj: p.id, punit: u.key, pname: p.name + (u.stepT ? ' › ' + u.stepT : '') };
+        if (u.due) data.date = u.due; if (u.dur != null && u.dur !== '') data.dur = +u.dur;
+        if (!it) put('items', uid(), Object.assign({ date: u.due || nextWorkday(TODAY()), dur: 1, checklist: [], prio: false, created: Date.now() }, data, { doneAt: u.done ? Date.now() : null }));
+        else if (differs(it, data)) put('items', it.id, Object.assign({}, it, data, it.done !== u.done ? { doneAt: u.done ? Date.now() : null } : {}));
+      } else { // 직원 담당 → 위임
+        if (it) del('items', it.id);
+        const data = { title: '[' + p.name + '] ' + u.t, staff: u.who, due: u.due || '', proj: p.id, punit: u.key, project: p.id };
+        if (!dl) {
+          if (!active && !u.done) return;
+          put('delegs', uid(), Object.assign({ mid: '', orig: '', src: '프로젝트', guides: [], autos: [], status: u.done ? 'closed' : 'sent', log: [{ at: TODAY(), t: '프로젝트 「' + p.name + '」에서 위임' }], created: Date.now() }, data));
+          toast(staffName(u.who) + '에게 위임으로 넘겼어요 · 위임 화면에서 지시 메시지를 보내세요');
+        } else {
+          const extra = {};
+          if (dl.staff !== u.who) extra.log = (dl.log || []).concat([{ at: TODAY(), t: '담당 변경 → ' + staffName(u.who) }]);
+          if (u.done && dl.status !== 'closed') { extra.status = 'closed'; extra.log = (extra.log || dl.log || []).concat([{ at: TODAY(), t: '프로젝트에서 완료 처리' }]); }
+          if (!u.done && active && (dl.status === 'closed' || (dl.status === 'stopped' && (dl.autoStop || dl.staff !== u.who)))) { extra.status = 'sent'; extra.autoStop = false; extra.log = (extra.log || dl.log || []).concat([{ at: TODAY(), t: '다시 위임' }]); }
+          if (differs(dl, data) || Object.keys(extra).length) put('delegs', dl.id, Object.assign({}, dl, data, extra));
+        }
+      }
+    });
+  } finally { PLOCK--; }
+}
+function backProp(col, x){ // 할 일·위임에서 바꾼 내용을 프로젝트에 반영
+  const p = S.projects[x.proj]; if (!p) return;
+  const np = normP(clean(p)), u = unitAt(np, x.punit); if (!u) return;
+  const st = np.steps.find(y => y.id === x.punit.split('/')[0]), eff = u.due || (st !== u && st ? st.due : null) || null;
+  const nd = (col === 'items' ? x.date : x.due) || null, due = !nd || nd === eff ? (u.due || null) : nd;
+  const patch = col === 'items' ? { done: !!x.done, due, t: x.title, dur: x.dur != null && x.dur !== '' ? +x.dur : (u.dur == null ? null : u.dur) } : { done: x.status === 'closed', due };
+  if (col === 'delegs' && x.staff && x.staff !== u.who && !['stopped'].includes(x.status)) patch.who = x.staff;
+  if (!differs(u, patch)) return;
+  Object.assign(u, patch); put('projects', p.id, np);
+}
+function removeUnit(pid, key){
+  const p = S.projects[pid]; if (!p) return;
+  const np = clean(p), [a, b] = key.split('/');
+  np.steps = (np.steps || []).map(st => st.id !== a ? st : (b ? Object.assign({}, st, { subs: (st.subs || []).filter(sb => sb.id !== b) }) : null)).filter(Boolean);
+  setTimeout(() => put('projects', pid, np), 0);
+}
+let MIGRATED = false;
+function migrateProjects(){ // 이전 버전 프로젝트: 단계 id 부여 + 할 일 연결
+  MIGRATED = true;
+  Object.values(S.projects).forEach(p => { if (!p.v2) put('projects', p.id, Object.assign({}, p, { v2: true })); });
 }
 
 /* ========== 빠른 입력 해석 ========== */
@@ -612,6 +703,7 @@ function applyTheme(){
 }
 function render(){
   applyTheme();
+  if (!MIGRATED && S.loaded && !S.gate && (S.sync === 'local' || S.cloudReady)) migrateProjects();
   document.documentElement.classList.toggle('mode-personal', V.mode === 'personal');
   if (S.gate) { $('side').innerHTML = ''; $('top').innerHTML = ''; $('tabbar').innerHTML = ''; $('fab').hidden = true; $('main').innerHTML = gateHtml(); return; }
   $('fab').hidden = false;
@@ -684,7 +776,7 @@ function resSummary(from, to, label){
 function taskRow(i){
   const p = i.scope === 'personal';
   const tag = isOverdue(i) ? `<span class="chip c-bad">${dday(i.date)}</span>` : '';
-  const meta = [areaName(i.area), i.start ? i.start : '', i.dur ? fh(+i.dur) : '', (i.checklist || []).length ? (i.checklist.filter(c => c.d).length + '/' + i.checklist.length) : ''].filter(Boolean).join(' · ');
+  const meta = [i.pname ? '▸ ' + i.pname : '', areaName(i.area), i.start ? i.start : '', i.dur ? fh(+i.dur) : '', (i.checklist || []).length ? (i.checklist.filter(c => c.d).length + '/' + i.checklist.length) : ''].filter(Boolean).join(' · ');
   return `<div class="item ${i.done ? 'done' : ''}"><button class="cb ${p ? 'p' : ''} ${i.done ? 'on' : ''}" data-act="toggleTask" data-id="${i.id}" aria-label="${h(i.title)} 완료">${i.done ? '✓' : ''}</button><div style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1"><span class="t" data-act="edit" data-id="${i.id}">${i.prio ? '<b style="color:var(--warn)">! </b>' : ''}${h(i.title)} ${tag}</span><span class="m">${h(meta)}${p ? ' · 개인' : ''}</span></div></div>`;
 }
 function routineRow(x, s){
@@ -701,7 +793,7 @@ function vToday(){
   const soon = Object.values(S.items).filter(i => i.kind === 'task' && !i.done && i.date > s && i.date <= add(s, 7) && vis(i.scope)).sort((a, b) => a.date < b.date ? -1 : 1);
   const delegDue = V.mode === 'personal' ? [] : Object.values(S.delegs).filter(d => !['closed','stopped'].includes(d.status) && d.due && d.due <= add(s, 3)).sort((a, b) => a.due < b.due ? -1 : 1);
   const review = V.mode === 'personal' ? [] : Object.values(S.delegs).filter(d => d.status === 'review');
-  const projNext = V.mode === 'personal' ? [] : Object.values(S.projects).filter(p => (p.status || 'active') === 'active').map(p => ({ p, st: (p.steps || []).filter(x => !x.done).sort((a, b) => (a.due || 'z') < (b.due || 'z') ? -1 : 1)[0] })).filter(x => x.st).slice(0, 5);
+  const projNext = V.mode === 'personal' ? [] : Object.values(S.projects).filter(p => (p.status || 'active') === 'active').map(p => ({ p, st: (p.steps || []).filter(x => !stepDone(x)).sort((a, b) => (a.due || 'z') < (b.due || 'z') ? -1 : 1)[0] })).filter(x => x.st).slice(0, 5);
   const leave = leaveOn(s), hol = holName(s);
   const running = V.running;
   const header = (hol || leave) ? `<div class="warnbox ok">${hol ? h(hol) + ' · 휴일' : ''}${leave ? LT[leave.ltype] + (HOURLY.includes(leave.ltype) ? ' ' + fh(leave.hours) : '') : ''} — ${V.mode === 'personal' ? '개인 시간으로 계산돼요' : '업무 가용 ' + fh(workCap(s))}</div>` : '';
@@ -829,7 +921,7 @@ function vWeek(){
     routineInst(s).filter(x => vis(x.scope) && !x.time).forEach(x => ch.push(`<button class="chip ${x.scope === 'personal' ? 'c-p' : 'c-w'}" style="border:0;cursor:pointer;overflow:hidden;text-overflow:ellipsis;${x.done ? 'opacity:.55' : ''}" data-act="editRoutine" data-id="${x.rid}">↻ ${h(x.title)}</button>`));
     if (V.mode !== 'personal') {
       Object.values(S.delegs).filter(d => d.due === s && !['closed','stopped'].includes(d.status)).forEach(d => ch.push(`<button class="chip c-warn" style="border:0;cursor:pointer;overflow:hidden;text-overflow:ellipsis" data-act="openDeleg" data-id="${d.id}">위임 · ${h(d.title)}</button>`));
-      Object.values(S.projects).filter(p => (p.status || 'active') === 'active').forEach(p => (p.steps || []).filter(x => x.due === s && !x.done).forEach(x => ch.push(`<button class="chip c-dash" style="background:transparent;cursor:pointer;overflow:hidden;text-overflow:ellipsis" data-act="openProject" data-id="${p.id}">${h(x.t)}</button>`)));
+      Object.values(S.projects).filter(p => (p.status || 'active') === 'active').forEach(p => (p.steps || []).filter(x => x.due === s && (x.subs || []).length && !stepDone(x)).forEach(x => ch.push(`<button class="chip c-dash" style="background:transparent;cursor:pointer;overflow:hidden;text-overflow:ellipsis" data-act="openProject" data-id="${p.id}">◆ ${h(x.t)}</button>`)));
     }
     const show = ch.slice(0, 3); if (ch.length > 3) show.push(`<button class="chip c-g" style="border:0;cursor:pointer" data-act="goDay" data-s="${s}">+${ch.length - 3}</button>`);
     return `<div class="${fullOff(s) ? 'off' : ''}">${show.join('')}</div>`;
@@ -859,7 +951,7 @@ function monthEvents(s){
   itemsOn(s).filter(i => vis(i.scope)).forEach(i => ev.push([i.scope === 'personal' ? 'p' : (isOverdue(i) ? 'bad' : 'w'), i.title, 'edit', i.id, i.done]));
   if (V.mode !== 'personal') {
     Object.values(S.delegs).filter(d => d.due === s && !['closed','stopped'].includes(d.status)).forEach(d => ev.push(['warn', '위임 · ' + d.title, 'openDeleg', d.id]));
-    Object.values(S.projects).filter(p => (p.status || 'active') === 'active').forEach(p => (p.steps || []).filter(x => x.due === s && !x.done).forEach(x => ev.push(['dash', x.t, 'openProject', p.id])));
+    Object.values(S.projects).filter(p => (p.status || 'active') === 'active').forEach(p => (p.steps || []).filter(x => x.due === s && (x.subs || []).length && !stepDone(x)).forEach(x => ev.push(['dash', '◆ ' + x.t, 'openProject', p.id])));
     routineInst(s).filter(x => x.scope === 'work' && ['weekly','biweekly','mfirst','mlast','mday'].includes(x.r.freq)).forEach(x => ev.push(['w', '↻ ' + x.title, 'editRoutine', x.rid]));
   }
   return { hol, ev };
@@ -892,7 +984,7 @@ function vYear(){
   Object.values(S.items).forEach(i => { if (!i.date) return; if (i.kind === 'leave') addEv(i.date, LT[i.ltype], 'lv'); else if ((i.kind === 'task' || i.kind === 'event') && vis(i.scope)) addEv(i.date, i.title, i.scope === 'personal' ? 'p' : 'w'); });
   if (V.mode !== 'personal') {
     Object.values(S.delegs).forEach(d => { if (d.due && !['closed','stopped'].includes(d.status)) addEv(d.due, d.title, 'warn'); });
-    Object.values(S.projects).forEach(p => { if ((p.status || 'active') === 'active') (p.steps || []).forEach(x => { if (x.due && !x.done) addEv(x.due, x.t, 'w'); }); });
+    Object.values(S.projects).forEach(p => { if ((p.status || 'active') === 'active') (p.steps || []).forEach(x => { if (x.due && (x.subs || []).length && !stepDone(x)) addEv(x.due, '◆ ' + x.t, 'w'); }); });
   }
   const K = { w: 'background:var(--acc-soft);color:var(--acc-fg)', p: 'background:var(--p-soft);color:var(--p-fg)', warn: 'background:var(--warn-soft);color:var(--warn)', lv: 'background:var(--fg2);color:var(--bg);font-weight:600' };
   for (let d = 1; d <= 31; d++) {
@@ -967,11 +1059,28 @@ function vProject(){
   const cur = F.find(f => f[0] === V.fProject) || F[0];
   const list = all.filter(cur[2]);
   const sel = S.projects[V.selProject] || list[0] || null;
-  const prog = p => { const st = p.steps || []; return [st.filter(x => x.done).length, st.length]; };
+  const prog = p => { const u = units(p); return [u.filter(x => x.done).length, u.length]; };
   return `<div class="fl">${F.map(f => `<button class="pill ${V.fProject === f[0] ? 'on' : ''}" data-act="fProject" data-f="${f[0]}">${f[1]} ${all.filter(f[2]).length}</button>`).join('')}<span class="grow"></span><button class="btn" data-act="newProject">빈 프로젝트</button><button class="btn pri" data-act="copyProject" ${all.length ? '' : 'disabled'}>+ 기존 것 복사해 만들기</button></div>
   <div class="two" style="grid-template-columns:minmax(0,380px) minmax(0,1fr)"><div class="col" style="gap:10px">
-  ${list.length ? list.map(p => { const [d, n] = prog(p); const nx = (p.steps || []).filter(x => !x.done && x.due).sort((a, b) => a.due < b.due ? -1 : 1)[0]; return `<button class="card" style="cursor:pointer;text-align:left;${sel && sel.id === p.id ? 'border:1.5px solid var(--acc)' : ''}" data-act="selProject" data-id="${p.id}"><span class="row"><span class="muted">${h(p.type || '프로젝트')}${p.star ? ' · ★' : ''}</span><span class="grow"></span><span class="chip ${(p.status || 'active') === 'active' && nx && nx.due <= add(TODAY(), 3) ? 'c-warn' : PS[p.status || 'active'][1]}">${(p.status || 'active') === 'active' && nx ? dday(nx.due) : PS[p.status || 'active'][0]}</span></span><b style="font-size:14px">${h(p.name)}</b><span class="row" style="gap:8px"><span class="mini"><i style="width:${n ? d / n * 100 : 0}%;background:var(--acc)"></i></span><span class="muted">${d} / ${n}</span></span></button>`; }).join('') : `<div class="card"><span class="muted">프로젝트가 없어요. "빈 프로젝트"로 시작하거나 기존 것을 복사하세요.</span></div>`}
+  ${list.length ? list.map(p => { const [d, n] = prog(p); const nx = units(p).filter(x => !x.done && x.due).sort((a, b) => a.due < b.due ? -1 : 1)[0]; return `<button class="card" style="cursor:pointer;text-align:left;${sel && sel.id === p.id ? 'border:1.5px solid var(--acc)' : ''}" data-act="selProject" data-id="${p.id}"><span class="row"><span class="muted">${h(p.type || '프로젝트')}${p.star ? ' · ★' : ''}</span><span class="grow"></span><span class="chip ${(p.status || 'active') === 'active' && nx && nx.due <= add(TODAY(), 3) ? 'c-warn' : PS[p.status || 'active'][1]}">${(p.status || 'active') === 'active' && nx ? dday(nx.due) : PS[p.status || 'active'][0]}</span></span><b style="font-size:14px">${h(p.name)}</b><span class="row" style="gap:8px"><span class="mini"><i style="width:${n ? d / n * 100 : 0}%;background:var(--acc)"></i></span><span class="muted">${d} / ${n}</span></span></button>`; }).join('') : `<div class="card"><span class="muted">프로젝트가 없어요. "빈 프로젝트"로 시작하거나 기존 것을 복사하세요.</span></div>`}
   </div><div>${sel ? projectDetail(sel) : ''}</div></div>`;
+}
+function whoSel(p, i, j, who){ return `<select class="in who" id="ps-${p.id}-${i}-${j}-w" data-act-change="pstepW" data-id="${p.id}" data-i="${i}" data-j="${j}" aria-label="담당"><option value="">나</option>${ST().staff.map(s => `<option value="${s.id}" ${who === s.id ? 'selected' : ''}>${h(s.n)}</option>`).join('')}</select>`; }
+function stepRow(p, x, i){
+  const subs = x.subs || [], has = subs.length > 0, dn = stepDone(x), pid = p.id;
+  const dl = who => who ? `<span class="chip c-warn" style="font-size:10px">위임</span>` : '';
+  const row = `<div class="step"><button class="cb ${dn ? 'on' : ''}" data-act="pstep" data-id="${pid}" data-i="${i}" data-j="-1" aria-label="${h(x.t)} 완료">${dn ? '✓' : ''}</button>
+    <input class="in" id="ps-${pid}-${i}-t" value="${h(x.t)}" data-act-change="pstepT" data-id="${pid}" data-i="${i}" data-j="-1" style="font-weight:600;${dn ? 'text-decoration:line-through;color:var(--fg3)' : ''}">
+    <div class="meta"><input class="in" type="date" id="ps-${pid}-${i}-d" value="${x.due || ''}" data-act-change="pstepD" data-id="${pid}" data-i="${i}" data-j="-1" aria-label="기한">
+    ${has ? `<span class="muted" style="width:130px;text-align:center">하위 ${subs.filter(y => y.done).length}/${subs.length}</span>` : `<input class="in hrs" type="number" step="0.5" min="0" id="ps-${pid}-${i}-h" value="${x.dur != null ? x.dur : ''}" placeholder="시간" data-act-change="pstepH" data-id="${pid}" data-i="${i}" data-j="-1" aria-label="소요 시간">${whoSel(p, i, -1, x.who)}`}</div>
+    <span class="row" style="gap:2px">${has ? '' : dl(x.who)}<button class="xb" data-act="psubOpen" data-id="${pid}" data-i="${i}" title="하위업무 추가" aria-label="하위업무 추가">＋</button><button class="xb" data-act="pstepDel" data-id="${pid}" data-i="${i}" data-j="-1" aria-label="${h(x.t)} 삭제">×</button></span></div>`;
+  const subRows = subs.map((y, j) => `<div class="step sub"><button class="cb ${y.done ? 'on' : ''}" data-act="pstep" data-id="${pid}" data-i="${i}" data-j="${j}" aria-label="${h(y.t)} 완료">${y.done ? '✓' : ''}</button>
+    <input class="in" id="ps-${pid}-${i}-${j}-t" value="${h(y.t)}" data-act-change="pstepT" data-id="${pid}" data-i="${i}" data-j="${j}" style="${y.done ? 'text-decoration:line-through;color:var(--fg3)' : ''}">
+    <div class="meta"><input class="in" type="date" id="ps-${pid}-${i}-${j}-d" value="${y.due || ''}" placeholder="${x.due || ''}" data-act-change="pstepD" data-id="${pid}" data-i="${i}" data-j="${j}" aria-label="기한" title="${y.due ? '' : '비우면 단계 기한 ' + (x.due || '') + ' 적용'}">
+    <input class="in hrs" type="number" step="0.5" min="0" id="ps-${pid}-${i}-${j}-h" value="${y.dur != null ? y.dur : ''}" placeholder="시간" data-act-change="pstepH" data-id="${pid}" data-i="${i}" data-j="${j}" aria-label="소요 시간">${whoSel(p, i, j, y.who)}</div>
+    <span class="row" style="gap:2px">${dl(y.who)}<button class="xb" data-act="pstepDel" data-id="${pid}" data-i="${i}" data-j="${j}" aria-label="${h(y.t)} 삭제">×</button></span></div>`).join('');
+  const adder = V.subOpen === pid + ':' + x.id ? `<div class="step sub add"><span></span><input class="in" id="psub-${pid}-${i}" placeholder="하위업무 입력 후 Enter (예: 온라인 대관 신청)" data-enter="psubAdd" data-id="${pid}" data-i="${i}"><div class="meta"><button class="btn sm" data-act="psubAdd" data-id="${pid}" data-i="${i}">추가</button><button class="btn sm ghost" data-act="psubClose">닫기</button></div><span></span></div>` : '';
+  return `<div class="sgroup">${row}${subRows}${adder}</div>`;
 }
 function projectDetail(p){
   const st = p.status || 'active';
@@ -979,9 +1088,9 @@ function projectDetail(p){
   return `<section class="card"><div class="row" style="align-items:flex-start;flex-wrap:wrap"><div style="flex:1;min-width:180px"><div class="muted">${h(p.type || '프로젝트')} · ${h(areaName(p.area))}</div><h2 style="font-size:19px">${h(p.name)}</h2></div>
   <div class="fl"><button class="btn sm" data-act="copyProject" data-id="${p.id}">복사해 새로 만들기</button>${st === 'active' ? `<button class="btn sm" data-act="pstat" data-id="${p.id}" data-s="hold">보류</button><button class="btn sm" data-act="pstat" data-id="${p.id}" data-s="stop">중단</button><button class="btn sm pri" data-act="pstat" data-id="${p.id}" data-s="done">완료</button>` : `<button class="btn sm" data-act="presume" data-id="${p.id}">${st === 'hold' ? '재개' : '다시 진행'}</button>`}<button class="btn sm ghost" data-act="editProjectMeta" data-id="${p.id}">이름·유형</button></div></div>
   ${st !== 'active' ? `<div class="warnbox ${st === 'done' ? 'ok' : ''}">${PS[st][0]} · ${p.statusAt ? md(p.statusAt) : ''}${p.statusMemo ? ' · ' + h(p.statusMemo) : ''}${st === 'hold' ? ' · 기한이 해제되어 오늘·주간 화면과 리소스에서 빠져 있어요' : ''}</div>` : ''}
-  <div class="ch"><b style="font-size:14px">단계</b><span class="muted">${(p.steps || []).filter(x => x.done).length} / ${(p.steps || []).length} 완료</span></div>
-  <div class="steps">${steps.map(({ x, i }) => `<div class="step"><button class="cb ${x.done ? 'on' : ''}" data-act="pstep" data-id="${p.id}" data-i="${i}" aria-label="${h(x.t)} 완료">${x.done ? '✓' : ''}</button><input class="in" id="ps-${p.id}-${i}-t" value="${h(x.t)}" data-act-change="pstepT" data-id="${p.id}" data-i="${i}" style="${x.done ? 'text-decoration:line-through;color:var(--fg3)' : ''}"><input class="in" type="date" id="ps-${p.id}-${i}-d" value="${x.due || ''}" data-act-change="pstepD" data-id="${p.id}" data-i="${i}"><select class="in who" id="ps-${p.id}-${i}-w" data-act-change="pstepW" data-id="${p.id}" data-i="${i}"><option value="">나</option>${ST().staff.map(s => `<option value="${s.id}" ${x.who === s.id ? 'selected' : ''}>${h(s.n)}</option>`).join('')}</select><button class="xb" data-act="pstepDel" data-id="${p.id}" data-i="${i}" aria-label="${h(x.t)} 삭제">×</button></div>`).join('')}</div>
-  <div class="row"><input class="in" id="newStep-${p.id}" placeholder="단계 추가 (Enter)" data-enter="pstepAdd" data-id="${p.id}"><button class="btn" data-act="pstepAdd" data-id="${p.id}">+ 추가</button></div>
+  <div class="ch"><b style="font-size:14px">단계 · 하위업무</b><span class="muted">${units(p).filter(x => x.done).length} / ${units(p).length} 완료 · 담당 "나" = 내 할 일, 직원 = 위임으로 자동 등록</span></div>
+  <div class="steps">${steps.map(({ x, i }) => stepRow(p, x, i)).join('')}</div>
+  <div class="row"><input class="in" id="newStep-${p.id}" placeholder="단계 추가 (Enter)" data-enter="pstepAdd" data-id="${p.id}"><button class="btn" data-act="pstepAdd" data-id="${p.id}">+ 단계</button></div>
   <label class="f">자료 · 링크 · 메모<textarea class="in" id="pmemo-${p.id}" data-act-change="pmemo" data-id="${p.id}" placeholder="아임웹 관리자 주소, 드라이브 폴더, 참고 사항">${h(p.memo || '')}</textarea></label>
   ${Object.values(S.delegs).filter(d => d.project === p.id).length ? `<div><b style="font-size:13px">연결된 위임</b>${Object.values(S.delegs).filter(d => d.project === p.id).map(d => `<div class="row" style="font-size:13px;cursor:pointer;padding:6px 0" data-act="openDeleg" data-id="${d.id}"><span class="grow ell">${h(d.title)}</span><span class="muted">${h(staffName(d.staff))} · ${DS[d.status][0]}</span></div>`).join('')}</div>` : ''}
   <div class="foot"><span class="grow"></span><button class="btn sm ghost" data-act="pdelete" data-id="${p.id}">프로젝트 삭제</button></div></section>`;
@@ -1304,6 +1413,7 @@ function openLeave(pre){
 }
 
 /* 프로젝트: 새로 / 복사 / 상태 */
+function editUnit(pid, i, j, fn){ const p = clean(S.projects[pid]); const st = p.steps[i]; if (!st) return; fn(j < 0 ? st : st.subs[j]); put('projects', pid, p); }
 function openProjectNew(copyFrom){
   const isCopy = copyFrom !== null && copyFrom !== undefined && Object.keys(S.projects).length > 0;
   const srcP = isCopy ? (S.projects[copyFrom] || Object.values(S.projects).sort((x, y) => (y.star ? 1 : 0) - (x.star ? 1 : 0))[0]) : null;
@@ -1314,7 +1424,7 @@ function openProjectNew(copyFrom){
     let preview = [];
     if (f.mode === 'copy' && src) {
       const dates = (src.steps || []).filter(x => x.due).map(x => x.due).sort(); const anchor = dates[dates.length - 1];
-      preview = (src.steps || []).map(x => ({ t: x.t, from: x.due, to: x.due && anchor ? add(f.base, Math.round((P(x.due) - P(anchor)) / 864e5)) : null, who: x.who, dur: x.dur, area: x.area }));
+      preview = (src.steps || []).map(x => ({ t: x.t + ((x.subs || []).length ? ' (하위 ' + x.subs.length + ')' : ''), from: x.due, to: x.due && anchor ? add(f.base, Math.round((P(x.due) - P(anchor)) / 864e5)) : null, who: x.who, dur: x.dur, area: x.area }));
     } else preview = f.steps.map((x, i) => ({ t: x.t, to: add(f.base, -(f.steps.length - 1 - i) * f.gap) }));
     let cap = 0, asg = 0; for (let s = TODAY(); s <= f.base; s = add(s, 1)) { cap += workCap(s); asg += assignedWork(s); }
     return `<div class="fl"><div class="seg"><button class="${f.mode === 'blank' ? 'on' : ''}" data-act="npSet" data-k="mode" data-v="blank">빈 프로젝트</button><button class="${f.mode === 'copy' ? 'on' : ''}" data-act="npSet" data-k="mode" data-v="copy" ${Object.keys(S.projects).length ? '' : 'disabled'}>기존 것 복사</button></div></div>
@@ -1324,12 +1434,12 @@ function openProjectNew(copyFrom){
     <div class="tbl"><div class="tr hd" style="grid-template-columns:minmax(0,1fr) 90px 90px 28px"><span>단계</span><span>${f.mode === 'copy' ? '원본' : ''}</span><span>새 날짜</span><span></span></div>
     ${preview.map((x, i) => `<div class="tr" style="grid-template-columns:minmax(0,1fr) 90px 90px 28px"><span class="ell">${h(x.t)}</span><span class="muted">${x.from ? md(x.from) : ''}</span><b>${x.to ? mdw(x.to) : '—'}</b>${f.mode === 'blank' ? `<button class="xb" data-act="npDel" data-i="${i}" aria-label="삭제">×</button>` : '<span></span>'}</div>`).join('')}</div>
     ${f.mode === 'blank' ? `<div class="row"><input class="in" id="np-step" data-f="_s" value="${h(f._s || '')}" placeholder="단계 추가 (Enter)" data-enter="npAdd"><button class="btn" data-act="npAdd">+ 추가</button><span class="muted" style="white-space:nowrap">간격</span><input class="in" type="number" min="1" id="np-gap" data-f="gap" data-num="1" value="${f.gap}" style="width:70px"><span class="muted">일</span></div>` : ''}
-    <div class="warnbox">오늘~${mdw(f.base)} 업무 여유 ${fh(cap - asg)} · 단계별 소요 시간은 만든 뒤 할 일로 옮기면 리소스에 반영돼요</div>
+    <div class="warnbox">오늘~${mdw(f.base)} 업무 여유 ${fh(cap - asg)} · 만들면 각 단계가 내 할 일로 바로 등록돼요. 하위업무·담당 직원은 만든 뒤 프로젝트 화면에서 추가하세요.</div>
     <div class="foot"><span class="grow"></span><button class="btn pri" data-act="npSave">만들기</button></div>`;
   }});
 }
 function openPStat(id, s){
-  const p = S.projects[id], open = (p.steps || []).filter(x => !x.done).length, dl = Object.values(S.delegs).filter(d => d.project === id && !['closed','stopped'].includes(d.status));
+  const p = S.projects[id], open = units(p).filter(x => !x.done).length, dl = Object.values(S.delegs).filter(d => d.project === id && !['closed','stopped'].includes(d.status));
   const f = { id, s, memo: '', split: 'all', star: true };
   const T = { hold: ['보류하기', [open + '개 남은 단계를 오늘·주간·리소스에서 빼요', dl.length ? '연결된 위임 ' + dl.length + '건은 그대로 두고, 보류 안내 메시지를 복사할 수 있어요' : '연결된 위임 없음', '재개하면 남은 단계 날짜를 오늘 기준으로 다시 계산해요'], '보류 사유 (선택)'],
     stop: ['중단하기', [open + '개 남은 단계를 기록으로만 보관해요 (되돌리기 가능)', dl.length ? '연결된 위임 ' + dl.length + '건을 취소 처리해요' : '연결된 위임 없음', '리소스에서 바로 빠져 여유 시간이 늘어나요'], '중단 사유'],
@@ -1455,7 +1565,7 @@ function buildIcs(){
   const from = TODAY();
   Object.values(S.items).forEach(i => { if (!i.date || i.date < from) return; if ((i.kind === 'task' && !i.done) || i.kind === 'event') push(i.id, (i.scope === 'personal' ? '[개인] ' : '') + i.title, i.date, i.start, i.end); if (i.kind === 'leave') push(i.id, LT[i.ltype], i.date); });
   Object.values(S.delegs).forEach(d => { if (d.due && d.due >= from && !['closed','stopped'].includes(d.status)) push(d.id, '[위임 마감] ' + staffName(d.staff) + ' · ' + d.title, d.due); });
-  Object.values(S.projects).forEach(p => { if ((p.status || 'active') === 'active') (p.steps || []).forEach((x, i) => { if (x.due && x.due >= from && !x.done) push(p.id + '-' + i, '[' + p.name + '] ' + x.t, x.due); }); });
+  Object.values(S.projects).forEach(p => { if ((p.status || 'active') === 'active') (p.steps || []).forEach((x, i) => { if (x.due && x.due >= from && (x.subs || []).length && !stepDone(x)) push(p.id + '-' + (x.id || i), '[' + p.name + '] ◆ ' + x.t + ' 마감', x.due); }); });
   return `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//workboard//KO\r\nCALSCALE:GREGORIAN\r\nX-WR-CALNAME:워크보드\r\n${ev.join('\r\n')}\r\nEND:VCALENDAR\r\n`;
 }
 async function importJson(file){
@@ -1488,10 +1598,13 @@ const A = {
   openProject: d => { V.selProject = d.id; const p = S.projects[d.id]; V.fProject = p && ['done','stop'].includes(p.status) ? 'archive' : 'live'; go('project'); },
   newProject: () => openProjectNew(null), copyProject: d => openProjectNew(d.id || ''),
   pstat: d => openPStat(d.id, d.s),
-  presume: async d => { const p = S.projects[d.id]; const shift = p.status === 'hold' && p.statusAt ? Math.max(0, Math.round((P(TODAY()) - P(p.statusAt)) / 864e5)) : 0; const steps = (p.steps || []).map(x => (!x.done && x.due && shift) ? Object.assign({}, x, { due: add(x.due, shift) }) : x); await put('projects', p.id, Object.assign({}, p, { status: 'active', steps, statusAt: TODAY(), statusMemo: shift ? '재개 · 남은 단계 ' + shift + '일 뒤로' : '재개' })); toast('다시 진행해요'); },
-  pstep: async d => { const p = S.projects[d.id]; const steps = p.steps.map((x, i) => i === +d.i ? Object.assign({}, x, { done: !x.done }) : x); await put('projects', p.id, Object.assign({}, p, { steps })); },
-  pstepDel: async d => { const p = S.projects[d.id]; await put('projects', p.id, Object.assign({}, p, { steps: p.steps.filter((_, i) => i !== +d.i) })); },
-  pstepAdd: async d => { const el = $('newStep-' + d.id); const t = el && el.value.trim(); if (!t) return; const p = S.projects[d.id]; await put('projects', p.id, Object.assign({}, p, { steps: (p.steps || []).concat([{ t, due: null, done: false, who: '' }]) })); },
+  presume: async d => { const p = S.projects[d.id]; const shift = p.status === 'hold' && p.statusAt ? Math.max(0, Math.round((P(TODAY()) - P(p.statusAt)) / 864e5)) : 0; const steps = (p.steps || []).map(x => { if (!shift || stepDone(x)) return x; const y = Object.assign({}, x); if (y.due) y.due = add(y.due, shift); y.subs = (y.subs || []).map(sb => (!sb.done && sb.due) ? Object.assign({}, sb, { due: add(sb.due, shift) }) : sb); return y; }); await put('projects', p.id, Object.assign({}, p, { status: 'active', steps, statusAt: TODAY(), statusMemo: shift ? '재개 · 남은 단계 ' + shift + '일 뒤로' : '재개' })); toast('다시 진행해요'); },
+  pstep: async d => { editUnit(d.id, +d.i, +d.j, u => { if (+d.j < 0 && (u.subs || []).length) { const v = !stepDone(u); u.subs = u.subs.map(sb => Object.assign({}, sb, { done: v })); } else u.done = !u.done; }); },
+  pstepDel: async d => { const p = clean(S.projects[d.id]); if (+d.j < 0) p.steps = p.steps.filter((_, i) => i !== +d.i); else p.steps[+d.i].subs = p.steps[+d.i].subs.filter((_, j) => j !== +d.j); await put('projects', p.id, p); },
+  pstepAdd: async d => { const el = $('newStep-' + d.id); const t = el && el.value.trim(); if (!t) return; const p = S.projects[d.id]; const last = (p.steps || []).map(x => x.due).filter(Boolean).sort().pop(); await put('projects', p.id, Object.assign({}, p, { steps: (p.steps || []).concat([{ t, due: last || nextWorkday(TODAY()), done: false, who: '' }]) })); setTimeout(() => { const e2 = $('newStep-' + d.id); if (e2) e2.focus(); }, 30); },
+  psubOpen: d => { const st = S.projects[d.id].steps[+d.i]; V.subOpen = d.id + ':' + st.id; render(); setTimeout(() => { const el = $('psub-' + d.id + '-' + d.i); if (el) el.focus(); }, 30); },
+  psubClose: () => { V.subOpen = null; render(); },
+  psubAdd: async d => { const el = $('psub-' + d.id + '-' + d.i); const t = el && el.value.trim(); if (!t) return; editUnit(d.id, +d.i, -1, u => { const first = !(u.subs || []).length; u.subs = (u.subs || []).concat([{ t, due: null, who: first ? (u.who || '') : '', done: false, dur: first && u.dur != null ? u.dur : null }]); if (first) { u.who = ''; u.done = false; } }); setTimeout(() => { const e2 = $('psub-' + d.id + '-' + d.i); if (e2) e2.focus(); }, 30); },
   pdelete: d => openModal({ title: '프로젝트 삭제', body: () => `<span>"${h(S.projects[d.id].name)}"을 삭제할까요? 단계와 메모가 모두 지워져요. 기록을 남기려면 "완료"나 "중단"을 쓰세요.</span><div class="foot"><span class="grow"></span><button class="btn" data-act="close">취소</button><button class="btn danger" data-act="pdeleteOk" data-id="${d.id}">삭제</button></div>` }),
   pdeleteOk: async d => { await del('projects', d.id); V.selProject = null; closeModal(); toast('삭제했어요'); },
   editProjectMeta: d => { const p = S.projects[d.id]; const f = { name: p.name, type: p.type || '프로젝트', area: p.area || '' }; openModal({ title: '이름 · 유형', f, body: () => `<label class="f">이름<input class="in" id="pm-n" data-f="name" value="${h(f.name)}"></label><div class="fl">${['프로젝트','행사','추적'].map(t => opt(f.type === t, 'pmSet', `data-v="${t}"`, t)).join('')}</div><label class="f">대표 분류<select class="in" id="pm-a" data-f="area"><option value="">없음</option>${ST().areas.map(a => `<option value="${a.id}" ${a.id === f.area ? 'selected' : ''}>${h(a.n)}</option>`).join('')}</select></label><div class="foot"><span class="grow"></span><button class="btn pri" data-act="pmSave" data-id="${p.id}">저장</button></div>` }); },
@@ -1513,7 +1626,7 @@ const A = {
   localMode: () => startLocal(), leaveLocal: () => { ls.set('wb.localMode', false); location.reload(); },
   exportIcs: () => downloadFile('워크보드-일정.ics', buildIcs()),
   notifyOn: async () => { if (typeof Notification === 'undefined') { toast('이 브라우저는 알림을 지원하지 않아요.'); return; } const p = await Notification.requestPermission(); toast(p === 'granted' ? '알림을 켰어요 (워크보드가 열려 있을 때)' : '알림이 허용되지 않았어요. 브라우저 설정에서 허용해 주세요.'); render(); },
-  cleanup: async () => { const cut = add(TODAY(), -365); const old = Object.values(S.items).filter(i => (i.kind === 'task' || i.kind === 'event') && i.date && i.date < cut && (i.done || i.kind === 'event')); for (const i of old) await del('items', i.id); toast(old.length + '개 정리했어요'); },
+  cleanup: async () => { const cut = add(TODAY(), -365); const old = Object.values(S.items).filter(i => (i.kind === 'task' || i.kind === 'event') && i.date && i.date < cut && (i.done || i.kind === 'event')); PLOCK++; try { for (const i of old) await del('items', i.id); } finally { PLOCK--; } toast(old.length + '개 정리했어요'); },
   exportJson: () => downloadFile('워크보드-백업-' + TODAY() + '.json', JSON.stringify({ settings: S.settings, items: S.items, routines: S.routines, delegs: S.delegs, projects: S.projects, flex: S.flex }, null, 1)),
   interrupt: () => openInterrupt(), endday: () => openEndDay(),
   stopRun: async () => { const r = V.running; if (!r) return; const e = nowH(), s = hm(r.start); await put('items', uid(), { kind: 'task', title: r.title, scope: 'work', area: r.area, date: r.date, start: r.start, dur: r2(Math.max(0.1, e - s)), done: true, doneAt: Date.now(), checklist: [], created: Date.now() }); V.running = null; ls.set('wb.running', null); toast('기록했어요 · ' + fh(Math.max(0.1, e - s))); render(); },
@@ -1549,14 +1662,14 @@ const A = {
   npDel: d => { M.f.steps = M.f.steps.filter((_, i) => i !== +d.i); renderModal(); },
   npAdd: () => { const t = (M.f._s || '').trim(); if (!t) return; M.f.steps = M.f.steps.concat([{ t }]); M.f._s = ''; renderModal(); const el = $('np-step'); if (el) el.focus(); },
   npSave: async () => { const f = M.f; const id = uid(); let steps;
-    if (f.mode === 'copy') { const src = S.projects[f.src]; if (!src) return; const dates = (src.steps || []).filter(x => x.due).map(x => x.due).sort(); const anchor = dates[dates.length - 1]; steps = (src.steps || []).map(x => ({ t: x.t, due: x.due && anchor ? add(f.base, Math.round((P(x.due) - P(anchor)) / 864e5)) : null, done: false, who: x.who || '', dur: x.dur || null, area: x.area || '' })); }
+    if (f.mode === 'copy') { const src = S.projects[f.src]; if (!src) return; const dates = (src.steps || []).filter(x => x.due).map(x => x.due).sort(); const anchor = dates[dates.length - 1]; const mv = dd => dd && anchor ? add(f.base, Math.round((P(dd) - P(anchor)) / 864e5)) : null; steps = (src.steps || []).map(x => ({ t: x.t, due: mv(x.due), done: false, who: x.who || '', dur: x.dur || null, area: x.area || '', subs: (x.subs || []).map(sb => ({ t: sb.t, due: mv(sb.due), done: false, who: sb.who || '', dur: sb.dur != null ? sb.dur : null })) })); }
     else steps = f.steps.map((x, i) => ({ t: x.t, due: add(f.base, -(f.steps.length - 1 - i) * (+f.gap || 5)), done: false, who: '' }));
     const src = f.mode === 'copy' ? S.projects[f.src] : null;
     await put('projects', id, { name: f.name.trim() || '새 ' + f.type, type: f.type, area: f.area || (src && src.area) || '', status: 'active', steps, memo: src ? src.memo || '' : '', created: Date.now() });
     V.selProject = id; V.fProject = 'live'; closeModal(); if (V.route !== 'project') go('project'); toast('만들었어요'); },
   psSet: d => { M.f[d.k] = d.k === 'star' ? !!d.v : d.v; renderModal(); },
   psSave: async () => { const f = M.f, p = S.projects[f.id]; let steps = p.steps || [];
-    if (f.s === 'done') { if (f.split === 'split') { for (const x of steps.filter(x => !x.done)) await put('items', uid(), { kind: 'task', title: x.t + ' (' + p.name + ')', scope: 'work', area: x.area || p.area || '', date: x.due || nextWorkday(TODAY()), dur: x.dur || 0.5, done: false, checklist: [], created: Date.now() }); } else steps = steps.map(x => Object.assign({}, x, { done: true })); }
+    if (f.s === 'done') { if (f.split === 'split') { PLOCK++; try { Object.values(S.items).filter(i => i.proj === p.id && !i.done).forEach(i => { const o = Object.assign({}, i, { title: i.title + ' (' + p.name + ')' }); delete o.proj; delete o.punit; delete o.pname; put('items', i.id, o); }); } finally { PLOCK--; } } else steps = steps.map(x => Object.assign({}, x, { done: true, subs: (x.subs || []).map(sb => Object.assign({}, sb, { done: true })) })); }
     if (f.s === 'stop') for (const d of Object.values(S.delegs).filter(d => d.project === p.id && !['closed','stopped'].includes(d.status))) await put('delegs', d.id, Object.assign({}, d, { status: 'stopped', log: (d.log || []).concat([{ at: TODAY(), t: '프로젝트 중단' }]) }));
     await put('projects', p.id, Object.assign({}, p, { status: f.s, statusAt: TODAY(), statusMemo: f.memo, steps, star: f.s === 'done' ? f.star : p.star })); closeModal(); toast({ hold: '보류했어요', stop: '중단했어요', done: '완료했어요' }[f.s]); },
   edAct: d => { M.f.acts[d.id] = d.v; renderModal(); },
@@ -1607,8 +1720,8 @@ document.addEventListener('change', async e => {
   const ac = t.dataset.actChange; if (!ac) return;
   const p = S.projects[t.dataset.id]; if (!p) return;
   if (ac === 'pmemo') { await put('projects', p.id, Object.assign({}, p, { memo: t.value })); return; }
-  const i = +t.dataset.i; const steps = p.steps.map((x, j) => j === i ? Object.assign({}, x, ac === 'pstepT' ? { t: t.value } : ac === 'pstepD' ? { due: t.value || null } : { who: t.value }) : x);
-  await put('projects', p.id, Object.assign({}, p, { steps }));
+  const i = +t.dataset.i, j = t.dataset.j == null ? -1 : +t.dataset.j;
+  editUnit(p.id, i, j, u => { if (ac === 'pstepT') u.t = t.value; else if (ac === 'pstepD') u.due = t.value || null; else if (ac === 'pstepH') u.dur = t.value === '' ? null : +t.value; else u.who = t.value; });
 });
 document.addEventListener('keydown', e => {
   const t = e.target, typing = /INPUT|TEXTAREA|SELECT/.test(t.tagName);
