@@ -342,15 +342,22 @@ const monthKey = s => s.slice(0, 7);
 const daysInMonth = (y, m) => new Date(y, m, 0).getDate();
 
 /* ========== 공휴일 (2026·2027, 설정에서 추가·삭제 가능) ========== */
-const HOL = {
- '2026-01-01':'신정','2026-02-16':'설날 연휴','2026-02-17':'설날','2026-02-18':'설날 연휴','2026-03-01':'삼일절','2026-03-02':'대체공휴일',
- '2026-05-01':'근로자의 날','2026-05-05':'어린이날','2026-05-24':'부처님오신날','2026-05-25':'대체공휴일','2026-06-03':'지방선거','2026-06-06':'현충일',
- '2026-07-17':'제헌절','2026-08-15':'광복절','2026-08-17':'대체공휴일','2026-09-24':'추석 연휴','2026-09-25':'추석','2026-09-26':'추석 연휴',
- '2026-10-03':'개천절','2026-10-05':'대체공휴일','2026-10-09':'한글날','2026-12-25':'성탄절',
- '2027-01-01':'신정','2027-02-06':'설날 연휴','2027-02-07':'설날','2027-02-08':'설날 연휴','2027-02-09':'대체공휴일','2027-03-01':'삼일절',
- '2027-05-01':'근로자의 날','2027-05-03':'대체공휴일','2027-05-05':'어린이날','2027-05-13':'부처님오신날','2027-06-06':'현충일','2027-07-17':'제헌절',
- '2027-07-19':'대체공휴일','2027-08-15':'광복절','2027-08-16':'대체공휴일','2027-09-14':'추석 연휴','2027-09-15':'추석','2027-09-16':'추석 연휴',
- '2027-10-03':'개천절','2027-10-04':'대체공휴일','2027-10-09':'한글날','2027-10-11':'대체공휴일','2027-12-25':'성탄절','2027-12-27':'대체공휴일'
+const HOL = { // 2026–2030 · 2028년 이후는 현행 대체공휴일 규칙으로 계산한 예상치 (정부 발표 후 확인)
+ '2026-01-01':'신정','2026-02-16':'설날 연휴','2026-02-17':'설날','2026-02-18':'설날 연휴','2026-03-01':'삼일절','2026-03-02':'대체공휴일','2026-05-01':'근로자의 날',
+ '2026-05-05':'어린이날','2026-05-24':'부처님오신날','2026-05-25':'대체공휴일','2026-06-03':'지방선거','2026-06-06':'현충일','2026-07-17':'제헌절','2026-08-15':'광복절',
+ '2026-08-17':'대체공휴일','2026-09-24':'추석 연휴','2026-09-25':'추석','2026-09-26':'추석 연휴','2026-10-03':'개천절','2026-10-05':'대체공휴일','2026-10-09':'한글날',
+ '2026-12-25':'성탄절','2027-01-01':'신정','2027-02-06':'설날 연휴','2027-02-07':'설날','2027-02-08':'설날 연휴','2027-02-09':'대체공휴일','2027-03-01':'삼일절',
+ '2027-05-01':'근로자의 날','2027-05-05':'어린이날','2027-05-13':'부처님오신날','2027-06-06':'현충일','2027-07-17':'제헌절','2027-07-19':'대체공휴일','2027-08-15':'광복절',
+ '2027-08-16':'대체공휴일','2027-09-14':'추석 연휴','2027-09-15':'추석','2027-09-16':'추석 연휴','2027-10-03':'개천절','2027-10-04':'대체공휴일','2027-10-09':'한글날',
+ '2027-10-11':'대체공휴일','2027-12-25':'성탄절','2027-12-27':'대체공휴일','2028-01-01':'신정','2028-01-26':'설날 연휴','2028-01-27':'설날','2028-01-28':'설날 연휴',
+ '2028-03-01':'삼일절','2028-04-12':'국회의원 선거','2028-05-01':'근로자의 날','2028-05-02':'부처님오신날','2028-05-05':'어린이날','2028-06-06':'현충일','2028-07-17':'제헌절',
+ '2028-08-15':'광복절','2028-10-02':'추석 연휴','2028-10-03':'추석·개천절','2028-10-04':'추석 연휴','2028-10-05':'대체공휴일','2028-10-09':'한글날','2028-12-25':'성탄절',
+ '2029-01-01':'신정','2029-02-12':'설날 연휴','2029-02-13':'설날','2029-02-14':'설날 연휴','2029-03-01':'삼일절','2029-05-01':'근로자의 날','2029-05-05':'어린이날',
+ '2029-05-07':'대체공휴일','2029-05-20':'부처님오신날','2029-05-21':'대체공휴일','2029-06-06':'현충일','2029-07-17':'제헌절','2029-08-15':'광복절','2029-09-21':'추석 연휴',
+ '2029-09-22':'추석','2029-09-23':'추석 연휴','2029-09-24':'대체공휴일','2029-10-03':'개천절','2029-10-09':'한글날','2029-12-25':'성탄절','2030-01-01':'신정',
+ '2030-02-02':'설날 연휴','2030-02-03':'설날','2030-02-04':'설날 연휴','2030-02-05':'대체공휴일','2030-03-01':'삼일절','2030-05-01':'근로자의 날','2030-05-05':'어린이날',
+ '2030-05-06':'대체공휴일','2030-05-09':'부처님오신날','2030-06-05':'지방선거','2030-06-06':'현충일','2030-07-17':'제헌절','2030-08-15':'광복절','2030-09-11':'추석 연휴',
+ '2030-09-12':'추석','2030-09-13':'추석 연휴','2030-10-03':'개천절','2030-10-09':'한글날','2030-12-25':'성탄절'
 };
 
 /* ========== 기본 설정 ========== */
@@ -386,6 +393,7 @@ const REC_ROUTINES = [
  {title:'광고 계정·결제수단 점검',area:'ad',ch:[],freq:'mfirst',time:null,dur:0.5}
 ];
 
+const APP_VER = '2026.09.29-8';
 /* ========== 상태 ========== */
 function startMode(){ // 앱을 열 때: 오늘 직접 바꾼 적이 있으면 그 모드, 아니면 근무시간=업무 · 그 외=개인
   const pref = ls.get('wb.modeAuto', true), last = ls.get('wb.mode', 'all');
@@ -815,7 +823,7 @@ function render(){
   renderSide(); renderTop(); renderMain(); renderTab(); checkNotify();
   if (M && M.live) { if (M.alive && !M.alive()) closeModal(); else renderModal(); }
 }
-const NAV = [['today','오늘','1'],['week','주간','2'],['month','월간','3'],['year','연간','4']];
+const NAV = [['today','일간','1'],['week','주간','2'],['month','월간','3'],['year','연간','4']];
 function manageNav(){
   const reviewN = Object.values(S.delegs).filter(d => d.status === 'review').length;
   const list = [];
@@ -834,6 +842,7 @@ function renderSide(){
   <div style="flex:1"></div>
   ${V.mode !== 'personal' ? `<button class="btn" data-act="interruptMenu" style="justify-content:center;border-color:var(--warn);color:var(--warn)">끼어든 일 <span class="kbd">I</span></button>` : ''}
   <div class="sync"><span class="dot" style="background:${syncTxt[0]}"></span>${syncTxt[1]}</div>
+  <div class="sync" style="font-size:11px">버전 ${APP_VER}</div>
   <div class="sync hint" style="line-height:1.9;flex-wrap:wrap;row-gap:2px">${[['N','입력'],['W','모드'],['T','오늘'],['G','날짜'],['/','검색'],['I','끼어든 일'],['R','주간 보고'],['H','도움말']].map(([k, l]) => `<span style="white-space:nowrap;margin-right:6px"><span class="kbd">${k}</span> ${l}</span>`).join('')}</div>`;
 }
 function titleFor(){
@@ -870,7 +879,7 @@ function datePicker(){
   <div class="dpf"><button class="btn sm" data-act="dpPick" data-s="${T}">오늘</button><button class="btn sm" data-act="dpPick" data-s="${add(T, 1)}">내일</button><button class="btn sm" data-act="dpPick" data-s="${add(weekStart(T), 7)}">다음 주</button><button class="btn sm" data-act="dpPick" data-s="${(m === 12 ? (y + 1) + '-01' : y + '-' + pad(m + 1)) + '-01'}">다음 달</button></div></div>`;
 }
 function renderTab(){
-  const tabs = [['today','오늘'],['week','주간'],['month','월간'],['year','연간'],['menu','메뉴']];
+  const tabs = [['today','일간'],['week','주간'],['month','월간'],['year','연간'],['menu','메뉴']];
   $('tabbar').innerHTML = tabs.map(([k, l]) => `<button class="${V.route === k || (k === 'menu' && !['today','week','month','year'].includes(V.route)) ? 'on' : ''}" data-act="go" data-r="${k}"><i></i>${l}</button>`).join('');
 }
 function renderMain(){
@@ -1158,12 +1167,23 @@ function vDeleg(){
   const late = d => d.due && d.due < TODAY() && !['closed','stopped','review'].includes(d.status);
   const F = [['open', '진행 전체', d => !['closed','stopped'].includes(d.status)], ['review', '검수 대기', d => d.status === 'review'], ['late', '지연', late], ['doing', '진행 중', d => ['sent','ack','doing','redo'].includes(d.status)], ['closed', '종료', d => ['closed','stopped'].includes(d.status)]];
   const cur = F.find(f => f[0] === V.fDeleg) || F[0];
-  const list = all.filter(cur[2]);
+  const list = all.filter(cur[2]).filter(d => !V.fStaff || d.staff === V.fStaff);
   const sel = S.delegs[V.selDeleg] || list[0] || null;
-  return `<div class="fl">${F.map(f => `<button class="pill ${V.fDeleg === f[0] ? 'on' : ''}" data-act="fDeleg" data-f="${f[0]}">${f[1]} ${all.filter(f[2]).length}</button>`).join('')}<span class="grow"></span><button class="btn pri" data-act="newDeleg">+ 위임 등록 <span class="kbd" style="background:transparent;color:#fff;border-color:rgba(255,255,255,.5)">D</span></button></div>
+  return `${staffLoad()}<div class="fl">${F.map(f => `<button class="pill ${V.fDeleg === f[0] ? 'on' : ''}" data-act="fDeleg" data-f="${f[0]}">${f[1]} ${all.filter(f[2]).length}</button>`).join('')}<span class="grow"></span><button class="btn pri" data-act="newDeleg">+ 위임 등록 <span class="kbd" style="background:transparent;color:#fff;border-color:rgba(255,255,255,.5)">D</span></button></div>
   <div class="two"><div class="tbl"><div class="tr hd" style="grid-template-columns:70px minmax(0,1fr) 64px 88px">${['담당','업무','기한','상태'].map(x => `<span>${x}</span>`).join('')}</div>
     ${list.length ? list.map(d => `<button class="tr ${sel && sel.id === d.id ? 'sel' : ''}" style="grid-template-columns:70px minmax(0,1fr) 64px 88px" data-act="selDeleg" data-id="${d.id}"><span>${h(staffName(d.staff))}</span><span class="ell">${h(d.title)}</span><span style="color:var(--fg2)">${d.due ? md(d.due) : '—'}</span><span class="chip ${late(d) ? 'c-bad' : DS[d.status][1]}">${late(d) ? dday(d.due) : DS[d.status][0]}</span></button>`).join('') : `<div class="empty" style="padding:16px">해당하는 위임 업무가 없어요. 메신저로 지시한 일을 "+ 위임 등록"으로 옮겨 두세요.</div>`}</div>
     <div id="delegDetail">${sel ? delegDetail(sel) : `<div class="card"><span class="muted hint">왼쪽에서 항목을 고르면 지시 내용과 검수 체크리스트가 보여요.</span></div>`}</div></div>`;
+}
+function loadOf(sid){
+  const L = Object.values(S.delegs).filter(d => d.staff === sid && !['closed','stopped'].includes(d.status));
+  const late = L.filter(d => d.due && d.due < TODAY() && d.status !== 'review'), rv = L.filter(d => d.status === 'review');
+  const next = L.filter(d => d.due && d.due >= TODAY() && d.status !== 'review').sort((a, b) => a.due < b.due ? -1 : 1)[0];
+  const wk = L.filter(d => d.due && d.due >= TODAY() && d.due <= add(TODAY(), 6)).length;
+  return { n: L.length, late: late.length, rv: rv.length, next, wk };
+}
+function staffLoad(){
+  const st = ST().staff; if (!st.length) return '';
+  return `<div class="kpis" style="grid-template-columns:repeat(${Math.min(st.length, 4)},minmax(0,1fr))">${st.map(x => { const l = loadOf(x.id); return `<button class="kpi" style="text-align:left;cursor:pointer;border:${V.fStaff === x.id ? '2px solid var(--acc)' : '1px solid var(--line)'}" data-act="fStaff" data-id="${x.id}"><div class="l">${h(x.n)}${x.role ? ' · ' + h(x.role) : ''}</div><div class="v" style="font-size:18px">${l.n}건 <span style="font-size:12px;font-weight:500;color:var(--fg2)">진행</span></div><div class="muted" style="margin-top:2px">${[l.wk ? '이번 주 마감 ' + l.wk : '', l.late ? '<b style="color:var(--bad)">지연 ' + l.late + '</b>' : '', l.rv ? '검수 대기 ' + l.rv : ''].filter(Boolean).join(' · ') || '여유'}${l.next ? '<br>다음 마감 ' + mdw(l.next.due) + ' · ' + h(l.next.title.slice(0, 14)) : ''}</div></button>`; }).join('')}</div>`;
 }
 function delegDetail(d){
   const g = d.guides || [], ok = g.filter(x => x.ok).length, ready = ok === g.length;
@@ -1343,6 +1363,7 @@ function vSettings(){
     <button class="btn" data-act="listAdd" data-k="${key}">+ 추가</button></section>`;
   const customs = Object.entries(st.customHol || {});
   return `<div class="two" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr)"><div class="col">
+  <section class="card" style="flex-direction:row;align-items:center"><b style="font-size:14px;flex:1">워크보드 버전</b><span class="chip c-g" style="font-size:12px;padding:4px 10px">${APP_VER}</span></section>
   <section class="card"><div class="ch"><h2>할 일 템플릿</h2><span class="muted hint">할 일 수정 창의 "템플릿으로 저장"으로 추가</span></div>
     ${(st.templates || []).length ? st.templates.map(tp => `<div class="row" style="font-size:13px"><b class="grow ell">${h(tp.name)}</b><span class="muted">${h(areaName(tp.area))}${tp.dur ? ' · ' + fh(+tp.dur) : ''} · 체크 ${(tp.checklist || []).length}</span><button class="xb" data-act="tplDel" data-id="${tp.id}" aria-label="${h(tp.name)} 삭제">×</button></div>`).join('') : '<div class="empty">저장된 템플릿이 없어요.</div>'}</section>
   <section class="card"><div class="ch"><h2>앱을 열 때 모드</h2></div><div class="seg" style="align-self:flex-start"><button class="${ls.get('wb.modeAuto', true) ? 'on' : ''}" data-act="modeAuto" data-v="1">자동 (근무시간 = 업무)</button><button class="${!ls.get('wb.modeAuto', true) ? 'on' : ''}" data-act="modeAuto" data-v="">마지막 선택 유지</button></div><span class="muted hint">자동: 평일 8:30–18:30엔 업무, 그 외엔 개인으로 열려요. 그날 직접 바꾸면 그날은 바꾼 모드로 열려요.</span></section>
@@ -1363,7 +1384,7 @@ function vSettings(){
     <label class="f">유연근무 기존 잔여 (시간)<input class="in" type="number" step="1" id="s-fi" value="${st.flexInit}" data-set="flexInit" data-num="1"></label>
     <label class="f">보상휴무 기존 잔여 (시간)<input class="in" type="number" step="1" id="s-ci" value="${st.compInit || 0}" data-set="compInit" data-num="1"></label></div>
     <div class="muted">현재 연차 기간: ${annualPeriod()[0].replace(/-/g, '.')} ~ ${annualPeriod()[1].replace(/-/g, '.')} · 직책휴가는 쓰지 않으면 다음 달로 이월돼요.</div></section>
-  <section class="card"><div class="ch"><h2>휴일</h2><span class="muted hint">2026·2027 공휴일 자동 · 회사 지정 휴무일 추가</span></div>
+  <section class="card"><div class="ch"><h2>휴일</h2><span class="muted hint">2026–2030 공휴일 자동 (2028년 이후는 예상치) · 회사 지정 휴무일 추가</span></div>
     ${customs.map(([d, n]) => `<div class="row" style="font-size:13px"><span style="width:100px">${d}</span><span class="grow">${h(n)}</span><button class="xb" data-act="holDel" data-d="${d}" aria-label="삭제">×</button></div>`).join('')}
     <div class="row"><input class="in" type="date" id="hol-d"><input class="in" id="hol-n" placeholder="이름 (예: 창립기념일)"><button class="btn" data-act="holAdd">추가</button></div>
     <details><summary class="muted" style="cursor:pointer">기본 공휴일 목록 보기 · 빼기</summary>${Object.keys(HOL).filter(d => d >= TODAY().slice(0, 4)).map(d => `<div class="row" style="font-size:12px;padding:3px 0"><span style="width:100px">${d}</span><span class="grow" style="${st.removedHol && st.removedHol[d] ? 'text-decoration:line-through;color:var(--fg4)' : ''}">${HOL[d]}</span><button class="btn sm ghost" data-act="holToggle" data-d="${d}">${st.removedHol && st.removedHol[d] ? '되살리기' : '근무일로'}</button></div>`).join('')}</details></section>
@@ -1409,6 +1430,15 @@ function renderModal(){
 }
 const opt = (on, act, extra, label) => `<button class="opt ${on ? 'on' : ''}" data-act="${act}" ${extra}>${label}</button>`;
 
+/* 소요 시간 추천: 분류별 실제 걸린 시간 평균 (최근 20건) */
+function actualOf(i){ return i.actual != null ? +i.actual : (i.logged ? +i.dur : null); }
+function durStats(area){
+  const L = Object.values(S.items).filter(i => i.kind === 'task' && i.done && (!area || i.area === area) && actualOf(i) != null && actualOf(i) > 0).sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0)).slice(0, 20);
+  if (L.length < 3) return null;
+  const avg = L.reduce((a, i) => a + actualOf(i), 0) / L.length;
+  const est = L.filter(i => i.est > 0); const ratio = est.length >= 3 ? est.reduce((a, i) => a + actualOf(i), 0) / est.reduce((a, i) => a + +i.est, 0) : null;
+  return { n: L.length, avg: Math.max(0.25, Math.round(avg * 4) / 4), ratio };
+}
 /* 입력 */
 const EVT_WORDS = /(미팅|회의|방문|통화|면담|약속|점심|저녁|식사|워크숍|워크샵|교육|세미나|상담|인터뷰|촬영|박람회|설명회|출장|병원|진료|예약)/;
 function autoKind(p, f){ // 할 일 / 일정 자동 판단 (탭을 직접 고르면 그대로)
@@ -1430,6 +1460,7 @@ function openQuick(pre){
     else {
       if (p.freq) chips.push(['c-w', '반복 · ' + freqLabel({ freq: p.freq, days: p.days, mday: p.mday })]); else { chips.push(['c-g', autoKind(p, f) === 'event' ? '일정' : '할 일']); chips.push([scope === 'personal' ? 'c-p' : 'c-w', mdw(date) + (p.dateEnd ? ' ~ ' + mdw(p.dateEnd) : '') + (start ? ' ' + start + (p.end ? '–' + p.end : '') : '')]); }
       if (p.dur) chips.push(['c-g', '소요 ' + fh(p.dur)]);
+      else if (p.area && !p.end && autoKind(p, f) === 'task') { const ds = durStats(p.area); if (ds) chips.push(['c-g', '예상 ' + fh(ds.avg) + ' (최근 ' + ds.n + '건 평균)']); }
       chips.push([scope === 'personal' ? 'c-p' : 'c-w', (scope === 'personal' ? '개인 · ' : '업무 · ') + (p.area ? areaName(p.area) : '분류 없음')]);
       p.ch.forEach(c => chips.push(['c-g', c]));
       if (p.staff) chips.push(['c-warn', '위임 · ' + staffName(p.staff)]);
@@ -1460,8 +1491,10 @@ async function quickSave(detail){
   if (p.staff || f.tab === 'deleg') { closeModal(); openDeleg({ title: p.title, staff: p.staff || (ST().staff[0] || {}).id, due: p.date || add(TODAY(), 3), orig: f.text }); return; }
   if (p.freq) { closeModal(); openRoutine({ title: p.title, freq: p.freq, days: p.days, mday: p.mday, time: start, dur: p.dur || 0.5, area: p.area, scope, anchor: p.date || TODAY(), ch: p.ch }); return; }
   const id = uid();
-  const it = { kind: autoKind(p, f), title: p.title, scope, area: p.area, ch: p.ch, members: p.members || [], date, start, dur: p.dur || (start ? 1 : 0.5), prio: p.prio, done: false, checklist: [], created: Date.now() };
+  const dsg = !p.dur && p.area ? durStats(p.area) : null;
+  const it = { kind: autoKind(p, f), title: p.title, scope, area: p.area, ch: p.ch, members: p.members || [], date, start, dur: p.dur || (dsg ? dsg.avg : (start ? 1 : 0.5)), prio: p.prio, done: false, checklist: [], created: Date.now() };
   if (p.dateEnd) it.dateEnd = p.dateEnd;
+  if (it.kind === 'task') it.est = it.dur;
   recentPush(f.text);
   if (it.kind === 'event' && start) it.end = p.end || toHM(Math.min(23.99, hm(start) + (p.dur || 1)));
   if (detail) { closeModal(); openEdit(Object.assign({ id, _new: true }, it)); return; }
@@ -1622,7 +1655,7 @@ function openEdit(src){
     <div class="card" style="background:var(--surface2);border:0;gap:8px">
       <div class="ch"><b style="font-size:13px">${f.kind === 'event' ? '날짜 · 시간' : '기한 · 시간'}</b>${f.date ? `<span class="chip ${f.date < TODAY() && !f.done ? 'c-bad' : f.date <= add(TODAY(), 2) ? 'c-warn' : 'c-g'}">${dday(f.date)}</span>` : ''}</div>
       <div class="fgrid"><label class="f">${f.kind === 'event' ? '시작일' : '날짜'}<input class="in" type="date" id="e-date" data-f="date" value="${h(f.date || '')}"></label>${f.kind === 'event' ? `<label class="f">종료일 (여러 날일 때)<input class="in" type="date" id="e-dend" data-f="dateEnd" value="${h(f.dateEnd || '')}" min="${h(f.date || '')}"></label>` : ''}<label class="f">시작 (선택)<input class="in" type="time" id="e-start" data-f="start" value="${h(f.start || '')}"></label>
-      ${f.kind === 'event' ? `<label class="f">끝<input class="in" type="time" id="e-end" data-f="end" value="${h(f.end || '')}"></label>` : `<label class="f">예상 소요 (시간)<input class="in" type="number" min="0" step="0.25" id="e-dur" data-f="dur" data-num="1" value="${h(f.dur || '')}"></label>`}</div>
+      ${f.kind === 'event' ? `<label class="f">끝<input class="in" type="time" id="e-end" data-f="end" value="${h(f.end || '')}"></label>` : `<label class="f">예상 소요 (시간)${(() => { const ds = f.area ? durStats(f.area) : null; return ds ? ` <button class="lnk" data-act="eSet" data-k="dur" data-v="${ds.avg}" title="이 분류 최근 ${ds.n}건 실제 시간 평균">평균 ${fh(ds.avg)}</button>` : ''; })()}<input class="in" type="number" min="0" step="0.25" id="e-dur" data-f="dur" data-num="1" value="${h(f.dur || '')}"></label>`}</div>
       <div class="fl">${[['+1h', 'h1'], ['내일', 'd1'], ['+3 근무일', 'w3'], ['다음 주 월', 'nm']].map(([l, k]) => `<button class="opt" data-act="eQuick" data-k="${k}">${l}</button>`).join('')}</div>
       ${f.date ? `<div class="warnbox ${over ? 'bad' : ''}" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="grow">${isOff(f.date) ? mdw(f.date) + ' ' + h(holName(f.date) || '주말') + ' — 휴일이에요' : scope === 'work' ? mdw(f.date) + ' 배정 ' + fh(tot) + ' / 가용 ' + fh(cap) + (over ? ' · ' + fh(tot - cap) + ' 초과' : '') : '개인 일정'}${f.start && hm(f.start) >= hm(ST().work.end) && scope === 'work' ? ' · 근무시간 이후 (시간외로 기록돼요)' : ''}</span>${over && free ? `<button class="btn sm" data-act="eSet" data-k="date" data-v="${free}">빈 날로: ${mdw(free)}</button>` : ''}</div>` : ''}
       ${moved ? `<label class="f">변경 사유 (선택)<input class="in" id="e-reason" data-f="_reason" value="${h(f._reason || '')}" placeholder="예: 대표님 신규 요청 우선"></label>` : ''}
@@ -1675,7 +1708,7 @@ function openDeleg(src){
   const f = Object.assign({ title: '', staff: (ST().staff[0] || {}).id, due: add(TODAY(), 3), mid: '', orig: '', src: '네이버웍스', guides: [], autos: [], project: '', status: 'sent', log: [] }, JSON.parse(JSON.stringify(src || {})));
   openModal({ title: f.id ? '위임 수정' : '위임 등록', cls: 'wide', f, focus: 'd-title', body(){
     return `<div class="two" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr)"><div class="col" style="gap:10px">
-      <div class="fl">${ST().staff.map(s => opt(f.staff === s.id, 'dSet', `data-k="staff" data-v="${s.id}"`, h(s.n))).join('')}</div>
+      <div class="fl">${ST().staff.map(s => { const l = loadOf(s.id); return opt(f.staff === s.id, 'dSet', `data-k="staff" data-v="${s.id}"`, h(s.n) + ` <span class="muted" style="font-size:11px">${l.n}건${l.late ? ' · 지연 ' + l.late : ''}</span>`); }).join('')}</div>
       <input class="in" id="d-title" data-f="title" value="${h(f.title)}" placeholder="업무명" style="height:40px;font-weight:600">
       <div class="fgrid"><label class="f">기한<input class="in" type="date" id="d-due" data-f="due" value="${h(f.due)}"></label><label class="f">중간 점검 (선택)<input class="in" type="date" id="d-mid" data-f="mid" value="${h(f.mid)}"></label></div>
       <label class="f">연결 프로젝트<select class="in" id="d-proj" data-f="project"><option value="">없음</option>${Object.values(S.projects).filter(p => ['active','hold'].includes(p.status || 'active')).map(p => `<option value="${p.id}" ${p.id === f.project ? 'selected' : ''}>${h(p.name)}</option>`).join('')}</select></label>
@@ -1775,7 +1808,9 @@ function openPStat(id, s){
 function openEndDay(){
   const t = TODAY(), tm = nextWorkday(t);
   const left = Object.values(S.items).filter(i => i.kind === 'task' && !i.done && i.date && i.date <= t && (i.scope || 'work') === 'work');
-  const f = { acts: {}, top: {} };
+  const doneToday = Object.values(S.items).filter(i => i.kind === 'task' && i.done && (i.scope || 'work') === 'work' && !i.logged && i.actual == null && i.doneAt && new Date(i.doneAt).toDateString() === new Date().toDateString());
+  const fri = !isOff(t) && weekStart(nextWorkday(t)) !== weekStart(t); // 이번 주 마지막 근무일
+  const f = { acts: {}, top: {}, real: {}, backup: fri && ST().lastBackup !== t };
   left.forEach(i => f.acts[i.id] = 'tm');
   openModal({ title: '하루 마감 · ' + mdw(t), cls: 'wide', f, body(){
     const add1 = left.filter(i => f.acts[i.id] === 'tm').reduce((a, i) => a + (+i.dur || 0), 0);
@@ -1791,6 +1826,9 @@ function openEndDay(){
       ${cands.length ? cands.map(i => `<button class="item" style="border:1px solid ${f.top[i.id] ? 'var(--acc-line)' : 'var(--line)'};background:${f.top[i.id] ? 'var(--acc-soft)' : 'var(--surface)'};width:100%;text-align:left;align-items:center;${!f.top[i.id] && nTop >= 3 ? 'opacity:.5' : ''}" data-act="edTop" data-id="${i.id}"><span class="cb ${f.top[i.id] ? 'on' : ''}">${f.top[i.id] ? '✓' : ''}</span><span style="font-size:13px;flex:1">${h(i.title)}</span><span class="muted">${i.dur ? fh(+i.dur) : ''}</span></button>`).join('') : '<div class="empty">다음 근무일 할 일이 아직 없어요.</div>'}
       <button class="btn" data-act="newExtra">+ 오늘 근무시간 외 업무 기록</button>
     </div></div>
+    ${doneToday.length ? `<div class="col" style="gap:6px"><b style="font-size:14px">③ 오늘 끝낸 일, 실제로 얼마나 걸렸나요?</b><span class="muted hint">기록할수록 새 할 일의 예상 시간이 정확해져요. 건너뛰어도 돼요.</span>
+      ${doneToday.map(i => `<div class="row" style="flex-wrap:wrap;gap:6px;padding:6px 0;border-bottom:1px solid var(--line2)"><span class="grow ell" style="font-size:13px;min-width:140px">${h(i.title)} <span class="muted">예상 ${fh(+i.dur || 0)}</span></span>${[['=', '예상대로'], [0.25, '15분'], [0.5, '30분'], [1, '1h'], [2, '2h'], [3, '3h'], [4, '4h+']].map(([v, l]) => opt(f.real[i.id] === String(v), 'edReal', `data-id="${i.id}" data-v="${v}"`, l)).join('')}</div>`).join('')}</div>` : ''}
+    ${fri ? `<div class="warnbox" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="grow">이번 주 마지막 근무일이에요. ${ST().lastBackup ? '마지막 백업 ' + mdw(ST().lastBackup) + '.' : '아직 백업한 적이 없어요.'}</span>${opt(f.backup, 'edBackup', '', '마감하면서 백업 파일 받기')}</div>` : ''}
     <div class="foot"><span class="muted hint">마감하면 할 일이 바로 옮겨져요</span><span class="grow"></span><button class="btn pri" data-act="edSave">마감 완료</button></div>`;
   }});
 }
@@ -1919,6 +1957,7 @@ const A = {
   edit: d => { const i = S.items[d.id]; if (i) openEdit(i); },
   toggleTask: async d => { const i = S.items[d.id]; if (!i) return; await undoable(i.done ? '미완료로 돌렸어요' : '완료 · ' + i.title, () => put('items', i.id, Object.assign({}, i, { done: !i.done, doneAt: !i.done ? Date.now() : null }))); },
   undo: () => doUndo(),
+  fStaff: d => { V.fStaff = V.fStaff === d.id ? null : d.id; V.selDeleg = null; render(); },
   projTag: async d => { S.settings.projTag = !!d.v; await putSettings(); },
   yKey: d => { V.yKey = !!d.v; ls.set('wb.yKey', V.yKey); render(); },
   modeAuto: d => { ls.set('wb.modeAuto', !!d.v); render(); },
@@ -2004,7 +2043,7 @@ const A = {
   exportJson: () => { S.settings.lastBackup = TODAY(); putSettings(); A._exportJson(); },
   _exportJson: () => downloadFile('워크보드-백업-' + TODAY() + '.json', JSON.stringify({ settings: S.settings, items: S.items, routines: S.routines, delegs: S.delegs, projects: S.projects, flex: S.flex }, null, 1)),
   interrupt: () => { closeModal(); openInterrupt(); }, endday: () => openEndDay(),
-  stopRun: async () => { const r = V.running; if (!r) return; const e = nowH(), s = hm(r.start); await put('items', uid(), { kind: 'task', title: r.title, scope: 'work', area: r.area, date: r.date, start: r.start, dur: r2(Math.max(0.1, e - s)), done: true, doneAt: Date.now(), checklist: [], created: Date.now() }); V.running = null; ls.set('wb.running', null); toast('기록했어요 · ' + fh(Math.max(0.1, e - s))); render(); },
+  stopRun: async () => { const r = V.running; if (!r) return; const e = nowH(), s = hm(r.start); await put('items', uid(), { kind: 'task', title: r.title, scope: 'work', area: r.area, date: r.date, start: r.start, dur: r2(Math.max(0.1, e - s)), logged: true, done: true, doneAt: Date.now(), checklist: [], created: Date.now() }); V.running = null; ls.set('wb.running', null); toast('기록했어요 · ' + fh(Math.max(0.1, e - s))); render(); },
   cancelRun: () => { V.running = null; ls.set('wb.running', null); render(); },
   /* 모달 내부 */
   qTab: d => { M.f.tab = d.t; M.f.tabSet = true; renderModal(); }, qScope: d => { M.f.scope = d.s; renderModal(); }, qSave: () => quickSave(false), qDetail: () => quickSave(true),
@@ -2014,7 +2053,7 @@ const A = {
   ckT: d => { M.f.checklist = M.f.checklist.map((c, i) => i === +d.i ? { t: c.t, d: !c.d } : c); renderModal(); },
   ckD: d => { M.f.checklist = M.f.checklist.filter((_, i) => i !== +d.i); renderModal(); },
   ckA: () => { const t = (M.f._ck || '').trim(); if (!t) return; M.f.checklist = M.f.checklist.concat([{ t, d: false }]); M.f._ck = ''; renderModal(); const el = $('e-ck'); if (el) el.focus(); },
-  eFinish: d => { const x = { done: !M.f.done, doneAt: Date.now() }; if (d.v) x.actual = +d.v; if (M.f.done) { x.done = false; x.doneAt = null; } editSave(x); },
+  eFinish: d => { const x = { done: !M.f.done, doneAt: Date.now() }; if (d.v) { x.actual = +d.v; if (M.f.est == null) x.est = M.f.dur; } if (M.f.done) { x.done = false; x.doneAt = null; } editSave(x); },
   eSave: () => editSave(), eDelete: async () => { const id = M.f.id; closeModal(); if (id) await undoable('삭제했어요', () => del('items', id)); },
   mbAdd: () => { const v = (M.f._mb || '').trim(); if (!v) return; M.f.members = (M.f.members || []).concat(v.split(/[,\s]+/).filter(Boolean).filter(n => !(M.f.members || []).includes(n))); M.f._mb = ''; renderModal(); const el = $('e-mb'); if (el) el.focus(); },
   mbPick: d => { if (!(M.f.members || []).includes(d.v)) M.f.members = (M.f.members || []).concat([d.v]); M.f._mb = ''; renderModal(); },
@@ -2053,7 +2092,10 @@ const A = {
     await put('projects', p.id, Object.assign({}, p, { status: f.s, statusAt: TODAY(), statusMemo: f.memo, steps, star: f.s === 'done' ? f.star : p.star })); closeModal(); toast({ hold: '보류했어요', stop: '중단했어요', done: '완료했어요' }[f.s]); },
   edAct: d => { M.f.acts[d.id] = d.v; renderModal(); },
   edTop: d => { const n = Object.values(M.f.top).filter(Boolean).length; if (!M.f.top[d.id] && n >= 3) return; M.f.top[d.id] = !M.f.top[d.id]; renderModal(); },
+  edReal: d => { M.f.real[d.id] = M.f.real[d.id] === d.v ? undefined : d.v; renderModal(); }, edBackup: () => { M.f.backup = !M.f.backup; renderModal(); },
   edSave: async () => { const f = M.f, tm = nextWorkday(TODAY());
+    for (const [id, v] of Object.entries(f.real || {})) { const i = S.items[id]; if (!i || v === undefined) continue; const act = v === '=' ? +i.dur || 0.5 : +v; await put('items', id, Object.assign({}, i, { actual: act, est: i.est != null ? i.est : i.dur })); }
+    if (f.backup) A.exportJson();
     for (const [id, a] of Object.entries(f.acts)) { const i = S.items[id]; if (!i) continue;
       if (a === 'drop') await del('items', id);
       else if (a === 'done') await put('items', id, Object.assign({}, i, { done: true, doneAt: Date.now() }));
@@ -2061,7 +2103,7 @@ const A = {
     for (const [id, on] of Object.entries(f.top)) { const i = S.items[id]; if (i) await put('items', id, Object.assign({}, i, { prio: !!on })); }
     closeModal(); toast('마감했어요 · 내일 할 일에 표시했어요'); },
   itSet: d => { M.f[d.k] = d.k === 'min' ? +d.v : d.v; renderModal(); },
-  itSave: async () => { const f = M.f; if (!f.t.trim()) { toast('무슨 일이었는지 골라 주세요.'); return; } const e = nowH(), s = Math.max(0, e - f.min / 60); await put('items', uid(), { kind: 'task', title: f.t, scope: 'work', area: f.area, date: TODAY(), start: toHM(s), dur: f.min / 60, done: true, doneAt: Date.now(), checklist: [], created: Date.now() }); closeModal(); toast('기록했어요 · 담당 외 ' + fh(f.min / 60)); },
+  itSave: async () => { const f = M.f; if (!f.t.trim()) { toast('무슨 일이었는지 골라 주세요.'); return; } const e = nowH(), s = Math.max(0, e - f.min / 60); await put('items', uid(), { kind: 'task', title: f.t, scope: 'work', area: f.area, date: TODAY(), start: toHM(s), dur: f.min / 60, logged: true, done: true, doneAt: Date.now(), checklist: [], created: Date.now() }); closeModal(); toast('기록했어요 · 담당 외 ' + fh(f.min / 60)); },
   itStart: () => { const f = M.f; if (!f.t.trim()) { toast('무슨 일인지 먼저 골라 주세요.'); return; } V.running = { title: f.t, area: f.area, date: TODAY(), start: toHM(nowH()) }; ls.set('wb.running', V.running); closeModal(); if (V.route !== 'today') go('today'); else render(); toast('시간을 재고 있어요. 끝나면 "종료하고 저장"'); },
   xSave: async () => { const f = M.f; if (hm(f.end) <= hm(f.start)) { toast('끝 시간이 시작보다 늦어야 해요.'); return; } await put('items', uid(), { kind: 'extra', date: f.date, start: f.start, end: f.end, note: f.note, converted: false, created: Date.now() }); closeModal(); toast('기록했어요'); },
   fxSet: d => { M.f.kind = d.v; if (d.v === 'use') M.f.h = Math.max(1, Math.round(+M.f.h || 1)); renderModal(); }, fxBank: d => { M.f.bank = d.v; renderModal(); },
