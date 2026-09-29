@@ -64,6 +64,8 @@ button{cursor:pointer}
 .top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .top h1{margin:0;font-size:20px;font-weight:700;letter-spacing:-.3px;white-space:nowrap}
 .dpw{position:relative}
+.ptg{font-weight:700;margin-right:3px;padding-right:4px;border-right:1px solid currentColor;opacity:.8}
+:root.nohelp .hint{display:none!important}
 .dropon{outline:2px dashed var(--acc);outline-offset:-2px;background-color:var(--acc-soft)!important}
 [draggable="true"]{cursor:grab}
 .pp-btn{border:1px solid var(--line);background:var(--surface);color:var(--fg2);border-radius:7px;font-size:11px;padding:3px 7px;white-space:nowrap;align-self:center;opacity:.8}
@@ -307,7 +309,7 @@ textarea.in{height:auto;padding:8px 10px;resize:vertical;min-height:60px;line-he
   </div>
 </div>
 <nav id="tabbar" aria-label="하단 메뉴"></nav>
-<button id="fab" aria-label="빠른 입력" data-act="quick">+</button>
+<button id="fab" aria-label="입력" data-act="quick">+</button>
 <div id="modal" hidden></div>
 <div id="toast" hidden></div>
 <script src="config.js"></script>
@@ -385,9 +387,15 @@ const REC_ROUTINES = [
 ];
 
 /* ========== 상태 ========== */
+function startMode(){ // 앱을 열 때: 오늘 직접 바꾼 적이 있으면 그 모드, 아니면 근무시간=업무 · 그 외=개인
+  const pref = ls.get('wb.modeAuto', true), last = ls.get('wb.mode', 'all');
+  if (!pref || ls.get('wb.modeDay', '') === TODAY()) return last;
+  const d = new Date(), wd = d.getDay(), hh = d.getHours() + d.getMinutes() / 60;
+  return (wd >= 1 && wd <= 5 && hh >= 8.5 && hh < 18.5) ? 'work' : 'personal';
+}
 const S = { settings: JSON.parse(JSON.stringify(DEF_SETTINGS)), items:{}, routines:{}, delegs:{}, projects:{}, flex:{}, loaded:false, sync:'local' };
 const V = {
-  route: 'today', cur: TODAY(), mode: ls.get('wb.mode', 'all'),
+  route: 'today', cur: TODAY(), mode: startMode(), yKey: ls.get('wb.yKey', false),
   resPer: 'week', resScope: null, fDeleg: 'open', fRoutine: 'all', fProject: 'live', selDeleg: null, selProject: null,
   sim: { h: 16, due: add(TODAY(), 14), name: '' }, running: ls.get('wb.running', null)
 };
@@ -518,7 +526,8 @@ function routineInst(s){
   return Object.values(S.routines).filter(r => occurs(r, s)).map(r => ({ rid: r.id, title: r.title, scope: r.scope || 'work', area: r.area, time: r.time, dur: +r.dur || 0, done: !!(r.done && r.done[s]), r }));
 }
 const vis = scope => V.mode === 'all' || (scope || 'work') === V.mode;
-const itemsOn = s => Object.values(S.items).filter(i => i.date === s && (i.kind === 'task' || i.kind === 'event'));
+const itemsOn = s => Object.values(S.items).filter(i => (i.kind === 'task' || i.kind === 'event') && (i.date === s || (i.dateEnd && i.date && s > i.date && s <= i.dateEnd)));
+const spanTxt = (i, s) => i.dateEnd && i.dateEnd > i.date ? ' (' + (Math.round((P(s) - P(i.date)) / 864e5) + 1) + '/' + (Math.round((P(i.dateEnd) - P(i.date)) / 864e5) + 1) + '일)' : '';
 function evDur(i){ if (i.kind === 'event' && i.start && i.end) return Math.max(0, hm(i.end) - hm(i.start)); return +i.dur || 0; }
 function assignedWork(s){
   let t = 0;
@@ -599,6 +608,10 @@ function normP(p){ // 단계·하위업무에 id 부여, 하위업무가 있으�
 }
 const KEYLABELS = ['마감일', '오픈일', '출시일', 'MVP 출시일', '보고일', '종료일'];
 const isEvt = p => p.type === '행사';
+function abbrOf(p){ if (!p) return ''; if (p.abbr != null && p.abbr !== '') return p.abbr; const w = (p.name || '').replace(/\(복사\)/g, '').trim().split(/\s+/)[0] || ''; return w.slice(0, 5); }
+const ptag = i => i && i.proj && S.projects[i.proj] && ST().projTag !== false ? abbrOf(S.projects[i.proj]) : '';
+const calTitle = i => { const t = ptag(i); return (t ? t + '·' : '') + i.title; }; // 캘린더용 제목: 프로젝트 약칭·할 일
+const typeLabel = t => t === '추적' ? '모니터링' : (t || '프로젝트');
 function evRange(p){ if (!p.evS) return null; return [p.evS, p.evE && p.evE >= p.evS ? p.evE : p.evS]; }
 function projOnCal(p){ return p.showCal !== false && ['active', 'done'].includes(p.status || 'active'); }
 function projCal(s){ // 그날 캘린더에 보일 프로젝트 대표 날짜 · 행사 (업무 캘린더에만)
@@ -606,24 +619,24 @@ function projCal(s){ // 그날 캘린더에 보일 프로젝트 대표 날짜 ·
   const out = [];
   Object.values(S.projects).forEach(p => {
     if (!projOnCal(p)) return;
-    if (isEvt(p)) { const r = evRange(p); if (r && s >= r[0] && s <= r[1]) { const tot = Math.round((P(r[1]) - P(r[0])) / 864e5) + 1, n = Math.round((P(s) - P(r[0])) / 864e5) + 1; out.push({ p, t: '행사 · ' + p.name + (tot > 1 ? ' (' + n + '/' + tot + '일)' : ''), k: 'evt' }); } }
+    if (isEvt(p)) { const r = evRange(p); if (r && s >= r[0] && s <= r[1]) { const tot = Math.round((P(r[1]) - P(r[0])) / 864e5) + 1, n = Math.round((P(s) - P(r[0])) / 864e5) + 1; out.push({ p, t: '행사 · ' + p.name + (tot > 1 ? ' (' + n + '/' + tot + '일)' : '') + (p.evStaff ? ' · ' + p.evStaff : ''), k: 'evt' }); } }
     else if (p.keyDate === s) out.push({ p, t: '◆ ' + (p.keyLabel || '마감일') + ' · ' + p.name, k: 'key' });
   });
   return out;
 }
 function offLook(s){ return isOff(s) || (fullOff(s) && !evBlock(s)); }
-function evBlock(s){ return Object.values(S.projects).some(p => isEvt(p) && (p.status || 'active') === 'active' && p.block !== false && evRange(p) && s >= evRange(p)[0] && s <= evRange(p)[1]); }
+function evBlock(s){ return Object.values(S.projects).some(p => isEvt(p) && (p.status || 'active') === 'active' && p.block === true && evRange(p) && s >= evRange(p)[0] && s <= evRange(p)[1]); }
 function projDateTxt(p){ if (isEvt(p)) { const r = evRange(p); return r ? '행사 ' + mdw(r[0]) + (r[1] !== r[0] ? ' ~ ' + mdw(r[1]) : '') : '행사일 미정'; } return p.keyDate ? '◆ ' + (p.keyLabel || '마감일') + ' ' + mdw(p.keyDate) : '대표 날짜 없음'; }
 function calFields(f){ // 새로 만들기 · 수정 창 공통: 대표 날짜 / 행사 기간
   const evt = f.type === '행사';
   return `<div class="card" style="background:var(--surface2);border:0;gap:8px">
     ${evt ? `<div class="fgrid"><label class="f">행사 시작일<input class="in" type="date" id="cf-s" data-f="base" value="${h(f.base || '')}"></label><label class="f">행사 종료일 (하루면 같은 날)<input class="in" type="date" id="cf-e" data-f="evE" value="${h(f.evE || f.base || '')}"></label></div>
-      <div class="fl">${opt(f.showCal !== false, 'cfT', 'data-k="showCal"', '업무 캘린더에 표시')}${opt(f.block !== false, 'cfT', 'data-k="block"', '행사 기간엔 다른 업무 배정 안 함')}</div>
-      ${f.base && (() => { let n = 0; const e = f.evE && f.evE >= f.base ? f.evE : f.base; for (let d = f.base; d <= e; d = add(d, 1)) if (isOff(d)) n++; return n; })() ? `<span class="muted">주말·공휴일이 포함돼요. 끝나면 근태에서 "근무시간 외 업무"로 기록 → 보상휴무로 전환하세요.</span>` : ''}`
+      <label class="f">현장 담당 (선택)<input class="in" id="cf-st" data-f="evStaff" value="${h(f.evStaff || '')}" placeholder="예: 직원A, 직원B"></label>
+      <div class="fl">${opt(f.showCal !== false, 'cfT', 'data-k="showCal"', '업무 캘린더에 표시')}${opt(f.block === true, 'cfT2b', '', '나도 현장 근무 (그 기간 내 업무 배정 막기)')}</div>`
     : `<div class="fl"><span class="muted">대표 날짜</span>${KEYLABELS.map(l => opt((f.keyLabel || '마감일') === l, 'cfLabel', `data-v="${l}"`, l)).join('')}</div>
       <div class="fgrid"><label class="f">${h(f.keyLabel || '마감일')}<input class="in" type="date" id="cf-k" data-f="base" value="${h(f.base || '')}"></label><label class="f">직접 이름 붙이기 (선택)<input class="in" id="cf-l" data-f="keyLabelC" value="${h(f.keyLabelC || '')}" placeholder="예: 1차 시안 공유"></label></div>
       <div class="fl">${opt(f.showCal !== false, 'cfT', 'data-k="showCal"', '업무 캘린더에 표시')}</div>`}
-    <span class="muted">개인 캘린더에는 나오지 않아요.</span></div>`;
+    <span class="muted hint">개인 캘린더에는 나오지 않아요.</span></div>`;
 }
 const stepDone = st => (st.subs || []).length ? st.subs.every(sb => sb.done) : !!st.done;
 function units(p){ // 실제로 할 일이 되는 단위: 하위업무, 또는 하위업무 없는 단계
@@ -660,7 +673,7 @@ function syncProject(p){
         else if (differs(it, data)) put('items', it.id, Object.assign({}, it, data, it.done !== u.done ? { doneAt: u.done ? Date.now() : null } : {}));
       } else { // 직원 담당 → 위임
         if (it) del('items', it.id);
-        const data = { title: '[' + p.name + '] ' + u.t, staff: u.who, due: u.due || '', proj: p.id, punit: u.key, project: p.id };
+        const data = { title: '[' + abbrOf(p) + '] ' + u.t, staff: u.who, due: u.due || '', proj: p.id, punit: u.key, project: p.id };
         if (!dl) {
           if (!active && !u.done) return;
           put('delegs', uid(), Object.assign({ mid: '', orig: '', src: '프로젝트', guides: [], autos: [], status: u.done ? 'closed' : 'sent', log: [{ at: TODAY(), t: '프로젝트 「' + p.name + '」에서 위임' }], created: Date.now() }, data));
@@ -702,7 +715,7 @@ function migrateProjects(){ // 이전 버전 프로젝트: 단계 id 부여 + �
 /* ========== 빠른 입력 해석 ========== */
 function parseQuick(text, tab){
   let t = ' ' + text + ' ';
-  const out = { title: '', date: null, start: null, dur: null, area: null, scope: null, staff: null, freq: null, days: null, prio: false, ch: [], ltype: null, hours: null };
+  const out = { title: '', date: null, dateEnd: null, end: null, start: null, dur: null, area: null, scope: null, staff: null, freq: null, days: null, prio: false, ch: [], ltype: null, hours: null };
   const today = TODAY();
   // 반복
   let m = t.match(/~\s*(매일|매주|격주|매월)\s*([월화수목금토일]*)(\s*(첫|말|\d{1,2}일))?/);
@@ -741,16 +754,33 @@ function parseQuick(text, tab){
     return ' ';
   });
   if (/\s!\s|^!|\s!$/.test(t) || t.includes(' ! ')) { out.prio = true; t = t.replace(/(^|\s)!(?=\s|$)/g, ' '); }
+  // 기간: 10/17~18 · 10/17-10/18 · 10월 17일~18일 · 10월 17~18일 · 토~일
+  { const today0 = TODAY(), fixY = (mo, da) => { const y = +today0.slice(0, 4); let x = y + '-' + pad(mo) + '-' + pad(da); if (x < add(today0, -60)) x = (y + 1) + '-' + pad(mo) + '-' + pad(da); return x; };
+    let r = t.match(/(\d{1,2})\s*[\/.]\s*(\d{1,2})\s*[~\-–]\s*(?:(\d{1,2})\s*[\/.]\s*)?(\d{1,2})(?!\s*(?:시|:|\d))/) || t.match(/(\d{1,2})\s*월\s*(\d{1,2})\s*일?\s*[~\-–]\s*(?:(\d{1,2})\s*월\s*)?(\d{1,2})\s*일/);
+    if (r) { const s1 = fixY(+r[1], +r[2]); let s2 = fixY(r[3] ? +r[3] : +r[1], +r[4]); if (s2 < s1) s2 = fixY(r[3] ? +r[3] : +r[1] + 1 > 12 ? 1 : +r[1] + 1, +r[4]); if (s2 > s1) { out.date = s1; out.dateEnd = s2; t = t.replace(r[0], ' '); } }
+    if (!out.date) { r = t.match(/(?:^|\s)(다음\s*주\s*)?([월화수목금토일])(?:요일)?\s*[~\-–]\s*([월화수목금토일])(?:요일)?(?=\s)/);
+      if (r) { const a0 = W.indexOf(r[2]), b0 = W.indexOf(r[3]); let k = r[1] ? add(weekStart(today0), 7) : today0; if (r[1]) k = add(k, (a0 + 6) % 7); else { for (let i = 0; i < 7; i++) { if (dow(k) === a0) break; k = add(k, 1); } } let e = k; for (let i = 0; i < 7; i++) { if (dow(e) === b0) break; e = add(e, 1); } if (e > k) { out.date = k; out.dateEnd = e; t = t.replace(r[0], ' '); } } } }
+  // 시간 범위: 13~18시 · 13-18시 · 13:00~18:00 · 오후 1시~6시 · 10시 반~12시
+  { const r = t.match(/(오전|오후)?\s*(\d{1,2})(?:\s*시\s*(반|\d{1,2}\s*분)?|:(\d{2}))?\s*[~\-–]\s*(오전|오후)?\s*(\d{1,2})(?:\s*시\s*(반|\d{1,2}\s*분)?|:(\d{2}))/);
+    if (r && (/시|:/.test(r[0]))) {
+      const mm = (x, y) => x === '반' ? 30 : x ? parseInt(x, 10) : y ? parseInt(y, 10) : 0;
+      let h1 = +r[2], h2 = +r[6]; const m1 = mm(r[3], r[4]), m2 = mm(r[7], r[8]);
+      if (r[1] === '오후' && h1 < 12) h1 += 12; if (r[5] === '오후' && h2 < 12) h2 += 12;
+      if (!r[1] && !r[5] && h1 >= 1 && h1 <= 6) { h1 += 12; if (h2 < 12) h2 += 12; }
+      if (!r[1] && r[5] === '오후' && h1 < 12 && h1 + 12 <= h2) h1 += 12;
+      if (!r[5] && h2 < h1 && h2 + 12 <= 24) h2 += 12;
+      if (h2 * 60 + m2 > h1 * 60 + m1 && h2 <= 24) { out.start = pad(h1) + ':' + pad(m1); out.end = pad(Math.min(h2, 23)) + ':' + pad(h2 >= 24 ? 59 : m2); if (out.dur == null) out.dur = r2((h2 * 60 + m2 - h1 * 60 - m1) / 60); t = t.replace(r[0], ' '); }
+    } }
   // 소요 시간 (시간·분) — '시' 보다 먼저
   m = t.match(/(\d+(?:\.\d+)?)\s*(h|시간)(?![가-힣])/i);
   if (m) { out.dur = parseFloat(m[1]); t = t.replace(m[0], ' '); }
-  m = t.match(/(오전|오후)?\s*(\d{1,2})\s*시\s*(반|(\d{1,2})\s*분)?/);
+  m = out.start ? null : t.match(/(오전|오후)?\s*(\d{1,2})\s*시\s*(반|(\d{1,2})\s*분)?/);
   if (m) { let hh = parseInt(m[2], 10); if (m[1] === '오후' && hh < 12) hh += 12; if (!m[1] && hh >= 1 && hh <= 6) hh += 12; const mm = m[3] === '반' ? 30 : (m[4] ? parseInt(m[4], 10) : 0); out.start = pad(hh) + ':' + pad(mm); t = t.replace(m[0], ' '); }
   if (!out.start) { m = t.match(/(\d{1,2}):(\d{2})/); if (m) { out.start = pad(m[1]) + ':' + m[2]; t = t.replace(m[0], ' '); } }
   m = t.match(/(\d+)\s*(m|분)(?![가-힣]|\S)/i);
   if (m && out.dur == null) { out.dur = parseInt(m[1], 10) / 60; t = t.replace(m[0], ' '); }
   if (HOURLY.includes(out.ltype) && out.dur) out.hours = Math.max(1, Math.round(out.dur));
-  // 날짜
+  // 날짜 (기간 먼저: 10/17~18, 10/17~10/18, 10월 17일~18일, 토~일)
   const rel = { '오늘': 0, '내일': 1, '모레': 2, '글피': 3 };
   m = t.match(/(오늘|내일|모레|글피)/);
   if (m) { out.date = add(today, rel[m[1]]); t = t.replace(m[0], ' '); }
@@ -774,8 +804,10 @@ function applyTheme(){
   const dark = t === 'dark' || (t === 'auto' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
   const m = document.querySelector('meta[name="theme-color"]'); if (m) m.setAttribute('content', dark ? '#161C25' : '#2754C5');
 }
+function helpOn(){ return ls.get('wb.help', true); }
 function render(){
   applyTheme();
+  document.documentElement.classList.toggle('nohelp', !helpOn());
   if (!MIGRATED && S.loaded && !S.gate && (S.sync === 'local' || S.cloudReady)) migrateProjects();
   document.documentElement.classList.toggle('mode-personal', V.mode === 'personal');
   if (S.gate) { $('side').innerHTML = ''; $('top').innerHTML = ''; $('tabbar').innerHTML = ''; $('fab').hidden = true; $('main').innerHTML = gateHtml(); return; }
@@ -800,10 +832,9 @@ function renderSide(){
   <div><div class="navh">보기</div>${NAV.map(([k, l, kb]) => `<button class="nav ${V.route === k ? 'on' : ''}" data-act="go" data-r="${k}">${l}<span class="k">${kb}</span></button>`).join('')}</div>
   <div><div class="navh">관리</div>${manageNav().map(([k, l, b]) => `<button class="nav ${V.route === k ? 'on' : ''}" data-act="go" data-r="${k}">${l}${b ? `<span class="badge">${b}</span>` : ''}</button>`).join('')}</div>
   <div style="flex:1"></div>
-  ${V.mode !== 'personal' ? `<button class="btn" data-act="urgent" style="justify-content:center;border-color:var(--warn);color:var(--warn)">대표님 급한 업무</button>` : ''}
-  <button class="btn" data-act="interrupt" style="justify-content:center">끼어든 일 기록</button>
+  ${V.mode !== 'personal' ? `<button class="btn" data-act="interruptMenu" style="justify-content:center;border-color:var(--warn);color:var(--warn)">끼어든 일 <span class="kbd">I</span></button>` : ''}
   <div class="sync"><span class="dot" style="background:${syncTxt[0]}"></span>${syncTxt[1]}</div>
-  <div class="sync" style="line-height:1.9;flex-wrap:wrap;row-gap:2px">${[['N','입력'],['W','모드'],['T','오늘'],['G','날짜'],['/','검색'],['R','주간 보고'],['U','급한 업무']].map(([k, l]) => `<span style="white-space:nowrap;margin-right:6px"><span class="kbd">${k}</span> ${l}</span>`).join('')}</div>`;
+  <div class="sync hint" style="line-height:1.9;flex-wrap:wrap;row-gap:2px">${[['N','입력'],['W','모드'],['T','오늘'],['G','날짜'],['/','검색'],['I','끼어든 일'],['R','주간 보고'],['H','도움말']].map(([k, l]) => `<span style="white-space:nowrap;margin-right:6px"><span class="kbd">${k}</span> ${l}</span>`).join('')}</div>`;
 }
 function titleFor(){
   const c = V.cur;
@@ -895,7 +926,7 @@ function vToday(){
   const leave = leaveOn(s), hol = holName(s);
   const running = V.running;
   const pc = projCal(s);
-  const header = (pc.length ? `<div class="fl">${pc.map(x => `<button class="chip ${x.k === 'evt' ? 'c-evt' : 'c-w'}" style="border:0;cursor:pointer;font-size:12px;padding:5px 10px" data-act="peekProject" data-id="${x.p.id}">${h(x.t)}</button>`).join('')}${evBlock(s) ? '<span class="muted">행사 기간이라 다른 업무 배정은 막혀 있어요</span>' : ''}</div>` : '') + ((hol || leave) ? `<div class="warnbox ok">${hol ? h(hol) + ' · 휴일' : ''}${leave ? LT[leave.ltype] + (HOURLY.includes(leave.ltype) ? ' ' + fh(leave.hours) : '') : ''} — ${V.mode === 'personal' ? '개인 시간으로 계산돼요' : '업무 가용 ' + fh(workCap(s))}</div>` : '');
+  const header = (pc.length ? `<div class="fl">${pc.map(x => `<button class="chip ${x.k === 'evt' ? 'c-evt' : 'c-w'}" style="border:0;cursor:pointer;font-size:12px;padding:5px 10px" data-act="peekProject" data-id="${x.p.id}">${h(x.t)}</button>`).join('')}${evBlock(s) ? '<span class="muted hint">행사 기간이라 다른 업무 배정은 막혀 있어요</span>' : ''}</div>` : '') + ((hol || leave) ? `<div class="warnbox ok">${hol ? h(hol) + ' · 휴일' : ''}${leave ? LT[leave.ltype] + (HOURLY.includes(leave.ltype) ? ' ' + fh(leave.hours) : '') : ''} — ${V.mode === 'personal' ? '개인 시간으로 계산돼요' : '업무 가용 ' + fh(workCap(s))}</div>` : '');
   return `${isToday ? backupBanner() : ''}${resSummary(s, s, isToday ? '오늘' : mdw(s))}${header}
   ${running ? `<div class="warnbox bad" style="display:flex;align-items:center;gap:10px">⏱ 기록 중: ${h(running.title)} (${running.start} 시작)<span class="grow"></span><button class="btn sm pri" data-act="stopRun">종료하고 저장</button><button class="btn sm" data-act="cancelRun">취소</button></div>` : ''}
   <div class="grid3">
@@ -908,7 +939,7 @@ function vToday(){
         ${doneT.length ? `<details><summary class="muted" style="cursor:pointer">완료 ${doneT.length}건</summary>${doneT.map(taskRow).join('')}</details>` : ''}
       </section>
     </div>
-    <section class="card"><div class="ch"><h2>타임라인</h2><span class="muted">빈칸을 누르면 그 시간에 입력</span><span class="grow"></span>${isToday ? `<button class="btn sm" data-act="endday">하루 마감</button>` : ''}</div>${timeline(s)}</section>
+    <section class="card"><div class="ch"><h2>타임라인</h2><span class="muted hint">빈칸을 누르면 그 시간에 입력</span><span class="grow"></span>${isToday ? `<button class="btn sm" data-act="endday">하루 마감</button>` : ''}</div>${timeline(s)}</section>
     <div class="col">
       <section class="card"><h2>임박 · 지연</h2>
         ${soon.concat(overdue.length && !isToday ? [] : []).slice(0, 6).map(i => `<div class="row" style="font-size:13px"><span class="chip ${P(i.date) - P(s) <= 2 * 864e5 ? 'c-warn' : 'c-g'}" style="width:58px;justify-content:center">${dday(i.date)}</span><span class="ell" style="cursor:pointer" data-act="edit" data-id="${i.id}">${h(i.title)}</span></div>`).join('')}
@@ -956,7 +987,7 @@ function layoutCols(list, minVis){ // 겹치는 블록을 나란히 (짧은 블�
 }
 function blocksFor(s, minVis){
   const bl = [];
-  itemsOn(s).filter(i => vis(i.scope) && i.start && !i.allDay).forEach(i => { const st = hm(i.start), e = i.kind === 'event' && i.end ? hm(i.end) : st + (+i.dur || 0.5); bl.push({ s: st, e: Math.max(e, st + 0.25), t: i.title, sub: i.start + (i.kind === 'event' && i.end ? '–' + i.end : '') + ((i.members || []).length ? ' · ' + i.members.join(', ') : ''), drag: i.id, cls: (i.scope === 'personal' ? 'pp' : 'w') + (i.done ? ' done' : ''), act: 'edit', id: i.id }); });
+  itemsOn(s).filter(i => vis(i.scope) && i.start && !i.allDay).forEach(i => { const st = hm(i.start), e = i.kind === 'event' && i.end ? hm(i.end) : st + (+i.dur || 0.5); bl.push({ s: st, e: Math.max(e, st + 0.25), t: calTitle(i), sub: i.start + (i.kind === 'event' && i.end ? '–' + i.end : '') + ((i.members || []).length ? ' · ' + i.members.join(', ') : ''), drag: i.id, cls: (i.scope === 'personal' ? 'pp' : 'w') + (i.done ? ' done' : ''), act: 'edit', id: i.id }); });
   routineInst(s).filter(x => vis(x.scope) && x.time).forEach(x => { const st = hm(x.time); bl.push({ s: st, e: st + Math.max(x.dur, 0.25), t: '↻ ' + x.title, sub: '', cls: (x.scope === 'personal' ? 'pp' : 'w') + (x.done ? ' done' : ''), act: 'editRoutine', id: x.rid, tm: x.time }); });
   Object.values(S.items).filter(i => i.kind === 'extra' && i.date === s && V.mode !== 'work').forEach(i => bl.push({ s: hm(i.start), e: hm(i.end), t: '시간외 · ' + i.note, sub: '', cls: 'w', act: 'go', id: 'leave' }));
   return layoutCols(bl, minVis);
@@ -1028,7 +1059,7 @@ function vWeek(){
     const hol = holName(s); if (hol) ch.push(`<span class="chip c-g">${h(hol)}</span>`);
     projCal(s).forEach(x => ch.push(`<button class="chip ${x.k === 'evt' ? 'c-evt' : 'c-w'}" style="border:0;cursor:pointer;overflow:hidden;text-overflow:ellipsis;font-weight:700" data-act="peekProject" data-id="${x.p.id}" title="${h(x.t)}">${h(x.t)}</button>`));
     const l = leaveOn(s); if (l) ch.push(`<span class="chip c-g">${LT[l.ltype]}</span>`);
-    itemsOn(s).filter(i => vis(i.scope) && (!i.start || i.allDay)).forEach(i => ch.push(`<button draggable="true" data-drag="${i.id}" class="chip ${i.scope === 'personal' ? 'c-p' : (isOverdue(i) ? 'c-bad' : 'c-w')}" style="border:0;cursor:pointer;max-width:100%;overflow:hidden;text-overflow:ellipsis;${i.done ? 'opacity:.55;text-decoration:line-through' : ''}" data-act="edit" data-id="${i.id}">${h(i.title)}</button>`));
+    itemsOn(s).filter(i => vis(i.scope) && (!i.start || i.allDay)).forEach(i => ch.push(`<button draggable="true" data-drag="${i.id}" class="chip ${i.scope === 'personal' ? 'c-p' : (isOverdue(i) ? 'c-bad' : 'c-w')}" style="border:0;cursor:pointer;max-width:100%;overflow:hidden;text-overflow:ellipsis;${i.done ? 'opacity:.55;text-decoration:line-through' : ''}" data-act="edit" data-id="${i.id}" title="${h((i.pname ? i.pname + ' › ' : '') + i.title)}">${ptag(i) ? `<b class="ptg">${h(ptag(i))}</b>` : ''}${h(i.title + spanTxt(i, s))}</button>`));
     routineInst(s).filter(x => vis(x.scope) && !x.time).forEach(x => ch.push(`<button class="chip ${x.scope === 'personal' ? 'c-p' : 'c-w'}" style="border:0;cursor:pointer;overflow:hidden;text-overflow:ellipsis;${x.done ? 'opacity:.55' : ''}" data-act="editRoutine" data-id="${x.rid}">↻ ${h(x.title)}</button>`));
     if (V.mode !== 'personal') {
       Object.values(S.delegs).filter(d => d.due === s && !['closed','stopped'].includes(d.status)).forEach(d => ch.push(`<button class="chip c-warn" style="border:0;cursor:pointer;overflow:hidden;text-overflow:ellipsis" data-act="peekDeleg" data-id="${d.id}">위임 · ${h(d.title)}</button>`));
@@ -1051,7 +1082,7 @@ function vWeek(){
     if (!off && V.mode !== 'personal' && assignedWork(s) > workCap(s)) col += `<div class="blk over" style="left:3px;right:3px;top:${(workWindow(s)[1] - a) * PX + 2}px;height:${PX - 4}px;justify-content:center;font-weight:700;cursor:default">초과 ${fh(assignedWork(s) - workCap(s))}</div>`;
     return col + `</div>`;
   }).join('');
- return `${resSummary(ws, add(ws, 6), '이번 주')}${V.mode !== 'personal' ? `<div class="fl"><span class="muted">일정은 끌어서 다른 날·시간으로 옮길 수 있어요 (PC)</span><span class="grow"></span><button class="btn sm" data-act="report">주간 보고 작성 <span class="kbd">R</span></button></div>` : ''}<div class="wk" style="overflow-x:auto"><div style="min-width:760px"><div class="wkh"><div></div>${head}</div><div class="wka"><div class="muted" style="display:flex;align-items:center;justify-content:center;font-size:10px">종일</div>${allday}</div><div class="wkb">${body}</div></div></div>`;
+ return `${resSummary(ws, add(ws, 6), '이번 주')}${V.mode !== 'personal' ? `<div class="fl"><span class="muted hint">일정은 끌어서 다른 날·시간으로 옮길 수 있어요 (PC)</span><span class="grow"></span><button class="btn sm" data-act="report">주간 보고 작성 <span class="kbd">R</span></button></div>` : ''}<div class="wk" style="overflow-x:auto"><div style="min-width:760px"><div class="wkh"><div></div>${head}</div><div class="wka"><div class="muted" style="display:flex;align-items:center;justify-content:center;font-size:10px">종일</div>${allday}</div><div class="wkb">${body}</div></div></div>`;
 }
 
 /* ----- 월간 ----- */
@@ -1060,7 +1091,7 @@ function monthEvents(s){
   const hol = holName(s); const l = leaveOn(s);
   projCal(s).forEach(x => ev.push([x.k === 'evt' ? 'evt' : 'w', x.t, 'peekProject', x.p.id]));
   if (l) ev.push(['g', LT[l.ltype], 'goDay', s]);
-  itemsOn(s).filter(i => vis(i.scope)).forEach(i => ev.push([i.scope === 'personal' ? 'p' : (isOverdue(i) ? 'bad' : 'w'), i.title, 'edit', i.id, i.done]));
+  itemsOn(s).filter(i => vis(i.scope)).forEach(i => ev.push([i.scope === 'personal' ? 'p' : (isOverdue(i) ? 'bad' : 'w'), calTitle(i) + spanTxt(i, s), 'edit', i.id, i.done]));
   if (V.mode !== 'personal') {
     Object.values(S.delegs).filter(d => d.due === s && !['closed','stopped'].includes(d.status)).forEach(d => ev.push(['warn', '위임 · ' + d.title, 'peekDeleg', d.id]));
     Object.values(S.projects).filter(p => (p.status || 'active') === 'active').forEach(p => (p.steps || []).filter(x => x.due === s && (x.subs || []).length && !stepDone(x)).forEach(x => ev.push(['dash', '◆ ' + x.t, 'peekProject', p.id])));
@@ -1084,7 +1115,7 @@ function vMonth(){
   }
   const mEnd = y + '-' + pad(m) + '-' + pad(daysInMonth(y, m));
   let wd = 0; for (let s = first; s <= mEnd; s = add(s, 1)) if (!isOff(s)) wd++;
-  return `${resSummary(first, mEnd, (m) + '월')}<div class="muted">근무일 ${wd}일 · 일정을 누르면 상세, 빈 곳을 누르면 그 주로 이동</div><div class="mg">${W.map((w, i) => `<div class="wd" style="${i === 0 || i === 6 ? 'color:var(--fg4)' : ''}">${w}</div>`).join('')}${cells}</div>`;
+  return `${resSummary(first, mEnd, (m) + '월')}<div class="muted">근무일 ${wd}일<span class="hint"> · 일정을 누르면 상세, 빈 곳을 누르면 그 주로 이동</span></div><div class="mg">${W.map((w, i) => `<div class="wd" style="${i === 0 || i === 6 ? 'color:var(--fg4)' : ''}">${w}</div>`).join('')}${cells}</div>`;
 }
 
 /* ----- 연간 ----- */
@@ -1095,12 +1126,13 @@ function vYear(){
   const y = +V.cur.slice(0, 4), cm = TODAY().slice(0, 4) == y ? +TODAY().slice(5, 7) : 0;
   let rows = '';
   const dayMap = {};
-  const addEv = (s, t, k) => { if (s.slice(0, 4) != y) return; (dayMap[s] = dayMap[s] || []).push([t, k]); }; // 표시용
-  if (V.mode !== 'personal') Object.values(S.projects).forEach(p => { if (!projOnCal(p)) return; if (isEvt(p)) { const r = evRange(p); if (r) for (let d = r[0]; d <= r[1]; d = add(d, 1)) addEv(d, '행사 · ' + p.name, 'evt'); } else if (p.keyDate) addEv(p.keyDate, '◆ ' + (p.keyLabel || '마감일') + ' · ' + p.name, 'w'); });
-  Object.values(S.items).forEach(i => { if (!i.date) return; if (i.kind === 'leave') addEv(i.date, LT[i.ltype], 'lv'); else if ((i.kind === 'task' || i.kind === 'event') && vis(i.scope)) addEv(i.date, i.title, i.scope === 'personal' ? 'p' : 'w'); });
+  const keyOnly = V.yKey && V.mode !== 'personal';
+  const addEv = (s, t, k) => { if (s.slice(0, 4) != y) return; if (keyOnly && !['evt', 'w2', 'lv'].includes(k)) return; (dayMap[s] = dayMap[s] || []).push([t, k === 'w2' ? 'w' : k]); }; // 표시용
+  if (V.mode !== 'personal') Object.values(S.projects).forEach(p => { if (!projOnCal(p)) return; if (isEvt(p)) { const r = evRange(p); if (r) for (let d = r[0]; d <= r[1]; d = add(d, 1)) addEv(d, '행사 · ' + p.name, 'evt'); } else if (p.keyDate) addEv(p.keyDate, '◆ ' + (p.keyLabel || '마감일') + ' · ' + p.name, 'w2'); });
+  Object.values(S.items).forEach(i => { if (!i.date) return; if (i.kind === 'leave') addEv(i.date, LT[i.ltype], 'lv'); else if ((i.kind === 'task' || i.kind === 'event') && vis(i.scope)) { if (i.dateEnd && i.dateEnd > i.date) { for (let d = i.date; d <= i.dateEnd; d = add(d, 1)) addEv(d, calTitle(i), i.scope === 'personal' ? 'p' : 'w'); } else addEv(i.date, calTitle(i), i.scope === 'personal' ? 'p' : 'w'); } });
   if (V.mode !== 'personal') {
     Object.values(S.delegs).forEach(d => { if (d.due && !['closed','stopped'].includes(d.status)) addEv(d.due, d.title, 'warn'); });
-    Object.values(S.projects).forEach(p => { if ((p.status || 'active') === 'active') (p.steps || []).forEach(x => { if (x.due && (x.subs || []).length && !stepDone(x)) addEv(x.due, '◆ ' + x.t, 'w'); }); });
+    Object.values(S.projects).forEach(p => { if ((p.status || 'active') === 'active') (p.steps || []).forEach(x => { if (x.due && (x.subs || []).length && !stepDone(x)) addEv(x.due, '◆ ' + x.t, 'w2'); }); });
   }
   const K = { evt: 'background:var(--acc);color:#fff;font-weight:600', w: 'background:var(--acc-soft);color:var(--acc-fg)', p: 'background:var(--p-soft);color:var(--p-fg)', warn: 'background:var(--warn-soft);color:var(--warn)', lv: 'background:var(--fg2);color:var(--bg);font-weight:600' };
   for (let d = 1; d <= 31; d++) {
@@ -1115,7 +1147,7 @@ function vYear(){
     rows += `</tr>`;
   }
   const yEnd = y + '-12-31';
-  return `${resSummary(y + '-01-01', yEnd, y + '년')}<div class="muted">일정을 누르면 상세, 빈 칸이나 월 이름을 누르면 월간으로 이동 · 회색 = 주말·공휴일</div>
+  return `${resSummary(y + '-01-01', yEnd, y + '년')}<div class="fl">${V.mode !== 'personal' ? `<div class="seg"><button class="${!V.yKey ? 'on' : ''}" data-act="yKey" data-v="">모든 일정</button><button class="${V.yKey ? 'on' : ''}" data-act="yKey" data-v="1">행사 · 마감 · 휴가만</button></div>` : ''}<span class="muted hint">일정을 누르면 상세, 빈 칸이나 월 이름을 누르면 월간으로 이동 · 회색 = 주말·공휴일</span></div>
   <div class="yr"><table><colgroup><col style="width:30px">${'<col>'.repeat(12)}</colgroup><thead><tr><th></th>${[...Array(12)].map((_, i) => `<th class="${i + 1 === cm ? 'cur' : ''}" data-act="goMonth" data-s="${y}-${pad(i + 1)}-01">${i + 1}월</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
@@ -1131,7 +1163,7 @@ function vDeleg(){
   return `<div class="fl">${F.map(f => `<button class="pill ${V.fDeleg === f[0] ? 'on' : ''}" data-act="fDeleg" data-f="${f[0]}">${f[1]} ${all.filter(f[2]).length}</button>`).join('')}<span class="grow"></span><button class="btn pri" data-act="newDeleg">+ 위임 등록 <span class="kbd" style="background:transparent;color:#fff;border-color:rgba(255,255,255,.5)">D</span></button></div>
   <div class="two"><div class="tbl"><div class="tr hd" style="grid-template-columns:70px minmax(0,1fr) 64px 88px">${['담당','업무','기한','상태'].map(x => `<span>${x}</span>`).join('')}</div>
     ${list.length ? list.map(d => `<button class="tr ${sel && sel.id === d.id ? 'sel' : ''}" style="grid-template-columns:70px minmax(0,1fr) 64px 88px" data-act="selDeleg" data-id="${d.id}"><span>${h(staffName(d.staff))}</span><span class="ell">${h(d.title)}</span><span style="color:var(--fg2)">${d.due ? md(d.due) : '—'}</span><span class="chip ${late(d) ? 'c-bad' : DS[d.status][1]}">${late(d) ? dday(d.due) : DS[d.status][0]}</span></button>`).join('') : `<div class="empty" style="padding:16px">해당하는 위임 업무가 없어요. 메신저로 지시한 일을 "+ 위임 등록"으로 옮겨 두세요.</div>`}</div>
-    <div id="delegDetail">${sel ? delegDetail(sel) : `<div class="card"><span class="muted">왼쪽에서 항목을 고르면 지시 내용과 검수 체크리스트가 보여요.</span></div>`}</div></div>`;
+    <div id="delegDetail">${sel ? delegDetail(sel) : `<div class="card"><span class="muted hint">왼쪽에서 항목을 고르면 지시 내용과 검수 체크리스트가 보여요.</span></div>`}</div></div>`;
 }
 function delegDetail(d){
   const g = d.guides || [], ok = g.filter(x => x.ok).length, ready = ok === g.length;
@@ -1141,7 +1173,7 @@ function delegDetail(d){
   return `<section class="card"><div class="muted">${h(staffName(d.staff))} · 기한 ${d.due ? mdw(d.due) : '미정'}${d.mid ? ' · 중간 점검 ' + md(d.mid) : ''} · ${DS[d.status][0]}</div>
   <div class="row"><h2 style="flex:1">${h(d.title)}</h2><button class="btn sm" data-act="editDeleg" data-id="${d.id}">수정</button></div>
   ${d.orig ? `<div><div class="muted" style="margin-bottom:4px">지시 원문 ${d.src ? '· ' + h(d.src) : ''}</div><div style="background:var(--surface2);border-radius:8px;padding:10px 12px;font-size:13px;white-space:pre-wrap">${h(d.orig)}</div></div>` : ''}
-  <div class="ch"><b style="font-size:13px">가이드라인</b><span class="muted">검수 때 반드시 확인</span><span class="grow"></span><b style="font-size:12px;color:var(--acc-fg)">${ok} / ${g.length}</b></div>
+  <div class="ch"><b style="font-size:13px">가이드라인</b><span class="muted hint">검수 때 반드시 확인</span><span class="grow"></span><b style="font-size:12px;color:var(--acc-fg)">${ok} / ${g.length}</b></div>
   ${g.map((x, i) => `<button class="item" style="border:1px solid ${x.ok ? 'var(--acc-line)' : 'var(--line)'};background:${x.ok ? 'var(--acc-soft)' : 'var(--surface)'};width:100%;text-align:left;align-items:center" data-act="guide" data-id="${d.id}" data-i="${i}"><span class="cb ${x.ok ? 'on' : ''}">${x.ok ? '✓' : ''}</span><span style="font-size:13px">${h(x.t)}</span></button>`).join('') || `<div class="empty">가이드라인이 없어요. 수정에서 추가하세요.</div>`}
   ${(d.autos || []).length ? `<div class="fl"><span class="muted">자율 영역:</span>${d.autos.map(a => `<span class="chip c-g" style="font-weight:500">${h(a)}</span>`).join('')}</div>` : ''}
   <div class="muted" style="line-height:1.7">${(d.log || []).map(l => md(l.at) + ' ' + h(l.t)).join(' · ')}</div>
@@ -1164,7 +1196,7 @@ function vRoutine(){
   return `<div class="fl">${F.map(f => `<button class="pill ${V.fRoutine === f[0] ? 'on' : ''}" data-act="fRoutine" data-f="${f[0]}">${f[1]}</button>`).join('')}<span class="grow"></span>${V.mode !== 'personal' && !Object.keys(S.routines).length ? `<button class="btn" data-act="addRec">추천 반복업무 불러오기</button>` : ''}<button class="btn pri" data-act="editRoutine">+ ${V.mode === 'personal' ? '루틴' : '반복업무'} 추가</button></div>
   <div class="tbl"><div class="tr hd" style="grid-template-columns:minmax(0,1fr) 150px 92px 56px 110px">${['이름','주기','다음','소요','최근 이행'].map(x => `<span>${x}</span>`).join('')}</div>
   ${list.length ? list.map(r => { const n = nextOcc(r), hist = lastOccs(r, 8); return `<button class="tr" style="grid-template-columns:minmax(0,1fr) 150px 92px 56px 110px" data-act="editRoutine" data-id="${r.id}"><span style="display:flex;flex-direction:column;min-width:0"><span class="ell" style="font-weight:500">${h(r.title)}</span><span class="muted">${h(areaName(r.area))}${r.scope === 'personal' ? ' · 개인' : ''}${r.time ? ' · ' + r.time : ''}</span></span><span>${h(freqLabel(r))}</span><span style="color:var(--fg2)">${n ? (n === TODAY() ? '오늘' : mdw(n)) : '—'}</span><span>${fh(+r.dur || 0)}</span><span style="display:flex;gap:3px">${hist.map(x => `<i style="width:9px;height:9px;border-radius:2px;background:${x ? 'var(--acc)' : 'var(--line)'}"></i>`).join('')}</span></button>`; }).join('') : `<div class="empty" style="padding:16px">등록된 ${V.mode === 'personal' ? '루틴' : '반복업무'}이 없어요. 오른쪽 위 버튼으로 추가하세요.</div>`}</div>
-  <div class="muted">반복일이 공휴일·휴가와 겹치면 다음 근무일로 자동 이동해요 (항목별로 변경 가능). 매일 반복은 근무일에만 생깁니다.</div>`;
+  <div class="muted hint">반복일이 공휴일·휴가와 겹치면 다음 근무일로 자동 이동해요 (항목별로 변경 가능). 매일 반복은 근무일에만 생깁니다.</div>`;
 }
 
 /* ----- 프로젝트 ----- */
@@ -1178,7 +1210,7 @@ function vProject(){
   const prog = p => { const u = units(p); return [u.filter(x => x.done).length, u.length]; };
   return `<div class="fl">${F.map(f => `<button class="pill ${V.fProject === f[0] ? 'on' : ''}" data-act="fProject" data-f="${f[0]}">${f[1]} ${all.filter(f[2]).length}</button>`).join('')}<span class="grow"></span><button class="btn" data-act="newProject">빈 프로젝트</button><button class="btn pri" data-act="copyProject" ${all.length ? '' : 'disabled'}>+ 기존 것 복사해 만들기</button></div>
   <div class="two" style="grid-template-columns:minmax(0,380px) minmax(0,1fr)"><div class="col" style="gap:10px">
-  ${list.length ? list.map(p => { const [d, n] = prog(p); const nx = units(p).filter(x => !x.done && x.due).sort((a, b) => a.due < b.due ? -1 : 1)[0]; return `<button class="card" style="cursor:pointer;text-align:left;${sel && sel.id === p.id ? 'border:1.5px solid var(--acc)' : ''}" data-act="selProject" data-id="${p.id}"><span class="row"><span class="muted">${h(p.type || '프로젝트')}${p.star ? ' · ★' : ''}</span><span class="grow"></span><span class="chip ${(p.status || 'active') === 'active' && nx && nx.due <= add(TODAY(), 3) ? 'c-warn' : PS[p.status || 'active'][1]}">${(p.status || 'active') === 'active' && nx ? dday(nx.due) : PS[p.status || 'active'][0]}</span></span><b style="font-size:14px">${h(p.name)}</b><span class="muted">${h(projDateTxt(p))}</span><span class="row" style="gap:8px"><span class="mini"><i style="width:${n ? d / n * 100 : 0}%;background:var(--acc)"></i></span><span class="muted">${d} / ${n}</span></span></button>`; }).join('') : `<div class="card"><span class="muted">프로젝트가 없어요. "빈 프로젝트"로 시작하거나 기존 것을 복사하세요.</span></div>`}
+  ${list.length ? list.map(p => { const [d, n] = prog(p); const nx = units(p).filter(x => !x.done && x.due).sort((a, b) => a.due < b.due ? -1 : 1)[0]; return `<button class="card" style="cursor:pointer;text-align:left;${sel && sel.id === p.id ? 'border:1.5px solid var(--acc)' : ''}" data-act="selProject" data-id="${p.id}"><span class="row"><span class="muted">${h(typeLabel(p.type))}${p.star ? ' · ★' : ''}</span><span class="grow"></span><span class="chip ${(p.status || 'active') === 'active' && nx && nx.due <= add(TODAY(), 3) ? 'c-warn' : PS[p.status || 'active'][1]}">${(p.status || 'active') === 'active' && nx ? dday(nx.due) : PS[p.status || 'active'][0]}</span></span><b style="font-size:14px">${h(p.name)}</b><span class="muted">${h(projDateTxt(p))}</span><span class="row" style="gap:8px"><span class="mini"><i style="width:${n ? d / n * 100 : 0}%;background:var(--acc)"></i></span><span class="muted">${d} / ${n}</span></span></button>`; }).join('') : `<div class="card"><span class="muted">프로젝트가 없어요. "빈 프로젝트"로 시작하거나 기존 것을 복사하세요.</span></div>`}
   </div><div>${sel ? projectDetail(sel) : ''}</div></div>`;
 }
 function whoSel(p, i, j, who){ return `<select class="in who" id="ps-${p.id}-${i}-${j}-w" data-act-change="pstepW" data-id="${p.id}" data-i="${i}" data-j="${j}" aria-label="담당"><option value="">나</option>${ST().staff.map(s => `<option value="${s.id}" ${who === s.id ? 'selected' : ''}>${h(s.n)}</option>`).join('')}</select>`; }
@@ -1201,11 +1233,11 @@ function stepRow(p, x, i){
 function projectDetail(p){
   const st = p.status || 'active';
   const steps = (p.steps || []).map((x, i) => ({ x, i })).sort((a, b) => (a.x.due || 'z') < (b.x.due || 'z') ? -1 : 1);
-  return `<section class="card"><div class="row" style="align-items:flex-start;flex-wrap:wrap"><div style="flex:1;min-width:180px"><div class="muted">${h(p.type || '프로젝트')} · ${h(areaName(p.area))}</div><h2 style="font-size:19px">${h(p.name)}</h2></div>
+  return `<section class="card"><div class="row" style="align-items:flex-start;flex-wrap:wrap"><div style="flex:1;min-width:180px"><div class="muted">${h(typeLabel(p.type))} · ${h(areaName(p.area))}</div><h2 style="font-size:19px">${h(p.name)}</h2></div>
   <div class="fl"><button class="btn sm" data-act="copyProject" data-id="${p.id}">복사해 새로 만들기</button>${st === 'active' ? `<button class="btn sm" data-act="pstat" data-id="${p.id}" data-s="hold">보류</button><button class="btn sm" data-act="pstat" data-id="${p.id}" data-s="stop">중단</button><button class="btn sm pri" data-act="pstat" data-id="${p.id}" data-s="done">완료</button>` : `<button class="btn sm" data-act="presume" data-id="${p.id}">${st === 'hold' ? '재개' : '다시 진행'}</button>`}<button class="btn sm ghost" data-act="editProjectMeta" data-id="${p.id}">기본 정보 · 날짜</button></div></div>
-  <div class="fl"><button class="chip ${isEvt(p) ? 'c-evt' : 'c-w'}" style="border:0;cursor:pointer;font-size:12px;padding:4px 10px" data-act="editProjectMeta" data-id="${p.id}">${h(projDateTxt(p))}</button><span class="muted">${p.showCal === false ? '캘린더에 표시 안 함' : '업무 캘린더에 표시 중'}${isEvt(p) && p.block !== false ? ' · 행사 기간 업무 배정 막음' : ''}</span></div>
+  <div class="fl"><button class="chip ${isEvt(p) ? 'c-evt' : 'c-w'}" style="border:0;cursor:pointer;font-size:12px;padding:4px 10px" data-act="editProjectMeta" data-id="${p.id}">${h(projDateTxt(p))}</button><span class="muted">${p.showCal === false ? '캘린더에 표시 안 함' : '업무 캘린더에 표시 중'}${isEvt(p) && p.evStaff ? ' · 현장: ' + h(p.evStaff) : ''}${isEvt(p) && p.block === true ? ' · 나도 현장 근무' : ''}</span></div>
   ${st !== 'active' ? `<div class="warnbox ${st === 'done' ? 'ok' : ''}">${PS[st][0]} · ${p.statusAt ? md(p.statusAt) : ''}${p.statusMemo ? ' · ' + h(p.statusMemo) : ''}${st === 'hold' ? ' · 기한이 해제되어 오늘·주간 화면과 리소스에서 빠져 있어요' : ''}</div>` : ''}
-  <div class="ch"><b style="font-size:14px">단계 · 하위업무</b><span class="muted">${units(p).filter(x => x.done).length} / ${units(p).length} 완료 · 담당 "나" = 내 할 일, 직원 = 위임으로 자동 등록</span></div>
+  <div class="ch"><b style="font-size:14px">단계 · 하위업무</b><span class="muted">${units(p).filter(x => x.done).length} / ${units(p).length} 완료<span class="hint"> · 담당 "나" = 내 할 일, 직원 = 위임으로 자동 등록</span></span></div>
   <div class="steps">${steps.map(({ x, i }) => stepRow(p, x, i)).join('')}</div>
   <div class="row"><input class="in" id="newStep-${p.id}" placeholder="단계 추가 (Enter)" data-enter="pstepAdd" data-id="${p.id}"><button class="btn" data-act="pstepAdd" data-id="${p.id}">+ 단계</button></div>
   <label class="f">자료 · 링크 · 메모<textarea class="in" id="pmemo-${p.id}" data-act-change="pmemo" data-id="${p.id}" placeholder="아임웹 관리자 주소, 드라이브 폴더, 참고 사항">${h(p.memo || '')}</textarea></label>
@@ -1230,7 +1262,7 @@ function subBuckets(per, from, to){
 function vResource(){
   const scope = V.mode === 'personal' ? 'personal' : 'work';
   const per = V.resPer, [from, to] = periodRange(per, V.cur);
-  const tabs = `<div class="fl"><div class="seg">${[['day','일'],['week','주'],['month','월'],['year','연']].map(([k, l]) => `<button class="${per === k ? 'on' : ''}" data-act="resPer" data-p="${k}">${l}</button>`).join('')}</div><b style="font-size:15px">${per === 'day' ? mdw(from) : md(from) + ' – ' + md(to)}</b><span class="muted">${scope === 'personal' ? '업무 외 시간 (평일: 출근 전·점심·퇴근 후 / 휴일: 전체)' : '업무시간만 집계 · 개인 일정 제외'}</span></div>`;
+  const tabs = `<div class="fl"><div class="seg">${[['day','일'],['week','주'],['month','월'],['year','연']].map(([k, l]) => `<button class="${per === k ? 'on' : ''}" data-act="resPer" data-p="${k}">${l}</button>`).join('')}</div><b style="font-size:15px">${per === 'day' ? mdw(from) : md(from) + ' – ' + md(to)}</b><span class="muted hint">${scope === 'personal' ? '업무 외 시간 (평일: 출근 전·점심·퇴근 후 / 휴일: 전체)' : '업무시간만 집계 · 개인 일정 제외'}</span></div>`;
   let cap = 0, asg = 0; for (let s = from; s <= to; s = add(s, 1)) { if (scope === 'work') { cap += workCap(s); asg += assignedWork(s); } else { cap += personalFree(s); asg += personalLogged(s); } }
   const free = r2(cap - asg);
   const kp = scope === 'work' ? [['업무 가용', fh(cap)], ['배정', fh(asg)], ['여유', fh(free), free < 0], ['배정률', Math.round(asg / (cap || 1) * 100) + '%']] : [['업무 외 시간', fh(cap)], ['기록 · 계획', fh(asg)], ['미기록', fh(free)], ['근무시간 외 업무', fh(areaHours(from, to, 'personal')._extra || 0)]];
@@ -1245,7 +1277,7 @@ function vResource(){
   else {
     const bk = subBuckets(per, from, to).map(([l, a, b]) => { let c = 0, u = 0; for (let s = a; s <= b; s = add(s, 1)) { if (scope === 'work') { c += workCap(s); u += assignedWork(s); } else { c += personalFree(s); u += personalLogged(s); } } return [l, c, u, a]; });
     const bm = Math.max(1, ...bk.map(x => Math.max(x[1], x[2]))) * 1.08;
-    chart = `<section class="card"><div class="ch"><h2>${{ week: '요일별', month: '주차별', year: '월별' }[per]} ${scope === 'work' ? '부하' : '기록'}</h2><span class="muted">막대를 누르면 해당 기간으로</span></div><div class="bars">${bk.map(([l, c, u, a]) => { const over = scope === 'work' && u > c; return `<button class="b" data-act="${per === 'year' ? 'goMonth' : per === 'month' ? 'goWeek' : 'goDay'}" data-s="${a}"><span class="v" style="${over ? 'color:var(--bad);font-weight:700' : ''}">${r2(u)}/${r2(c)}</span><span class="trk"><i style="position:absolute;left:0;right:0;bottom:0;height:${Math.min(u, c) / bm * 130}px;background:${scope === 'work' ? 'var(--acc)' : 'var(--p)'};opacity:.75;border-radius:5px 5px 0 0"></i>${over ? `<i style="position:absolute;left:0;right:0;bottom:${c / bm * 130}px;height:${(u - c) / bm * 130}px;background:var(--bad);border-radius:4px 4px 0 0"></i>` : ''}<i style="position:absolute;left:-2px;right:-2px;bottom:${c / bm * 130}px;border-top:2px solid var(--fg)"></i></span><span class="lb">${l}</span></button>`; }).join('')}</div></section>`;
+    chart = `<section class="card"><div class="ch"><h2>${{ week: '요일별', month: '주차별', year: '월별' }[per]} ${scope === 'work' ? '부하' : '기록'}</h2><span class="muted hint">막대를 누르면 해당 기간으로</span></div><div class="bars">${bk.map(([l, c, u, a]) => { const over = scope === 'work' && u > c; return `<button class="b" data-act="${per === 'year' ? 'goMonth' : per === 'month' ? 'goWeek' : 'goDay'}" data-s="${a}"><span class="v" style="${over ? 'color:var(--bad);font-weight:700' : ''}">${r2(u)}/${r2(c)}</span><span class="trk"><i style="position:absolute;left:0;right:0;bottom:0;height:${Math.min(u, c) / bm * 130}px;background:${scope === 'work' ? 'var(--acc)' : 'var(--p)'};opacity:.75;border-radius:5px 5px 0 0"></i>${over ? `<i style="position:absolute;left:0;right:0;bottom:${c / bm * 130}px;height:${(u - c) / bm * 130}px;background:var(--bad);border-radius:4px 4px 0 0"></i>` : ''}<i style="position:absolute;left:-2px;right:-2px;bottom:${c / bm * 130}px;border-top:2px solid var(--fg)"></i></span><span class="lb">${l}</span></button>`; }).join('')}</div></section>`;
   }
   return `${tabs}${kpis}<div class="two"><div class="col">${chart}${areas}</div><div class="col">${scope === 'work' ? simPanel() : goalPanel(from, to)}</div></div>`;
 }
@@ -1257,7 +1289,7 @@ function simPanel(){
   let need = short, pushed = [];
   later.forEach(i => { if (need > 0) { pushed.push(i); need -= +i.dur; } });
   const msg = short > 0 ? `대표님, 요청하신 [${sm.name || '신규 업무'}](약 ${sm.h}시간)를 ${mdw(sm.due)}까지 진행하면 기존 일정이 아래처럼 뒤로 밀립니다.\n${pushed.map(i => '· ' + i.title + ' (' + mdw(i.date) + ' → 이후)').join('\n') || '· (조정 대상 없음)'}\n유지해야 하는 일정이 있으면 알려주세요. 우선순위를 다시 잡겠습니다.` : `요청하신 [${sm.name || '신규 업무'}]는 ${mdw(sm.due)}까지 기존 일정 영향 없이 진행 가능합니다.`;
-  return `<section class="card"><div class="ch"><h2>신규 업무 영향 확인</h2><span class="muted">추가 전에 확인</span></div>
+  return `<section class="card"><div class="ch"><h2>신규 업무 영향 확인</h2><span class="muted hint">추가 전에 확인</span></div>
   <label class="f">업무명<input class="in" id="sim-name" value="${h(sm.name)}" data-sim="name" placeholder="예: 일본 단체상품 랜딩페이지"></label>
   <div class="fgrid"><label class="f">예상 소요 (시간)<input class="in" id="sim-h" type="number" min="0" step="0.5" value="${h(sm.h)}" data-sim="h"></label><label class="f">희망 기한<input class="in" id="sim-due" type="date" value="${h(sm.due)}" data-sim="due"></label></div>
   <div class="warnbox ${short > 0 ? 'bad' : 'ok'}">오늘~${mdw(sm.due)} 여유 ${fh(free)} → ${short > 0 ? fh(short) + ' 부족' : '추가 가능'}</div>
@@ -1289,16 +1321,16 @@ function vLeave(){
   return `<div class="fl"><span class="grow"></span><button class="btn" data-act="newExtra">+ 근무시간 외 업무 기록</button><button class="btn pri" data-act="newLeave">+ 휴가 · 근태 등록</button></div>
   <div class="kpis"><div class="kpi"><div class="l">연차 잔여 (${pd(pS)}~${pd(pE)})</div><div class="v">${r2(b.annualLeft)} / ${b.annualGrant}일</div></div><div class="kpi"><div class="l">직책휴가 잔여 (이월)</div><div class="v">${b.posLeft}일</div></div><div class="kpi"><div class="l">유연근무 잔여</div><div class="v">${fh(b.flexLeft)}</div></div><div class="kpi"><div class="l">보상휴무 잔여</div><div class="v">${fh(b.compLeft)}</div></div></div>
   <div class="two" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr)">
-  <section class="card"><div class="ch"><h2>휴가 기록</h2><span class="muted">앱 등록 전 사용분은 설정의 초기값</span></div>
+  <section class="card"><div class="ch"><h2>휴가 기록</h2><span class="muted hint">앱 등록 전 사용분은 설정의 초기값</span></div>
     ${L.length ? L.map(l => `<div class="row" style="font-size:13px;padding:6px 0;border-bottom:1px solid var(--line2)"><span style="width:84px">${mdw(l.date)}</span><span class="grow">${LT[l.ltype]}${HOURLY.includes(l.ltype) ? ' ' + fh(l.hours) : ''}${l.memo ? ' · ' + h(l.memo) : ''}</span><span class="muted">${l.date > TODAY() ? '예정' : ''}</span><button class="xb" data-act="delItem" data-id="${l.id}" aria-label="삭제">×</button></div>`).join('') : '<div class="empty">등록된 휴가가 없어요.</div>'}
     <div><div class="muted" style="margin-bottom:6px">직책휴가 · ${+b.posStart.slice(5)}월부터 매월 1일 발생 · 발생 ${b.posGranted} · 사용 ${b.posUsed} (앱 등록 전 ${b.posUsed - Object.values(b.posByMonth).reduce((a, c) => a + c, 0)})</div><div class="fl">${pm.map(k => { const n = b.posByMonth[k] || 0; return `<span class="chip ${n ? 'c-w' : 'c-g'}" style="font-weight:500">${+k.slice(5)}월 ${n ? '사용 ' + n : '+1'}</span>`; }).join('') || '<span class="muted">아직 발생 전이에요.</span>'}</div></div>
-    <div class="muted">연차 기간은 입사일(${annivMD().replace('-', '/')}) 기준이에요. 부여 일수가 바뀌면 설정에서 고쳐 주세요.</div>
+    <div class="muted hint">연차 기간은 입사일(${annivMD().replace('-', '/')}) 기준이에요. 부여 일수가 바뀌면 설정에서 고쳐 주세요.</div>
   </section>
-  <section class="card"><div class="ch"><h2>유연근무</h2><span class="muted">승인된 건만 적립 · 시간 단위</span><span class="grow"></span><button class="btn sm" data-act="newFlex" data-b="flex">+ 적립 · 사용</button></div>
+  <section class="card"><div class="ch"><h2>유연근무</h2><span class="muted hint">승인된 건만 적립 · 시간 단위</span><span class="grow"></span><button class="btn sm" data-act="newFlex" data-b="flex">+ 적립 · 사용</button></div>
     ${ledger('flex')}
-    <div class="ch" style="margin-top:8px"><h2>보상휴무</h2><span class="muted">휴일근무 등으로 발생 · 시간 단위</span><span class="grow"></span><button class="btn sm" data-act="newFlex" data-b="comp">+ 적립 · 사용</button></div>
+    <div class="ch" style="margin-top:8px"><h2>보상휴무</h2><span class="muted hint">휴일근무 등으로 발생 · 시간 단위</span><span class="grow"></span><button class="btn sm" data-act="newFlex" data-b="comp">+ 적립 · 사용</button></div>
     ${ledger('comp')}
-    <h2 style="margin-top:8px">근무시간 외 업무</h2><span class="muted">점심·퇴근 후·휴일 업무를 기록해 두고, 승인받은 건만 유연근무나 보상휴무로 전환하세요.</span>
+    <h2 style="margin-top:8px">근무시간 외 업무</h2><span class="muted hint">점심·퇴근 후·휴일 업무를 기록해 두고, 승인받은 건만 유연근무나 보상휴무로 전환하세요.</span>
     ${extra.length ? extra.map(e => `<div class="row" style="font-size:13px;padding:6px 0;border-bottom:1px solid var(--line2);flex-wrap:wrap"><span style="width:84px">${mdw(e.date)}</span><span class="grow ell">${e.start}–${e.end} ${h(e.note || '')}</span>${e.converted ? `<span class="chip c-w">${e.converted === 'comp' ? '보상휴무' : '유연근무'} 전환됨</span>` : `<button class="btn sm" data-act="convertExtra" data-id="${e.id}" data-b="flex">유연근무로</button><button class="btn sm" data-act="convertExtra" data-id="${e.id}" data-b="comp">보상휴무로</button>`}<button class="xb" data-act="delItem" data-id="${e.id}" aria-label="삭제">×</button></div>`).join('') : '<div class="empty">기록이 없어요.</div>'}
   </section></div>`;
 }
@@ -1311,9 +1343,12 @@ function vSettings(){
     <button class="btn" data-act="listAdd" data-k="${key}">+ 추가</button></section>`;
   const customs = Object.entries(st.customHol || {});
   return `<div class="two" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr)"><div class="col">
-  <section class="card"><div class="ch"><h2>할 일 템플릿</h2><span class="muted">할 일 수정 창의 "템플릿으로 저장"으로 추가</span></div>
+  <section class="card"><div class="ch"><h2>할 일 템플릿</h2><span class="muted hint">할 일 수정 창의 "템플릿으로 저장"으로 추가</span></div>
     ${(st.templates || []).length ? st.templates.map(tp => `<div class="row" style="font-size:13px"><b class="grow ell">${h(tp.name)}</b><span class="muted">${h(areaName(tp.area))}${tp.dur ? ' · ' + fh(+tp.dur) : ''} · 체크 ${(tp.checklist || []).length}</span><button class="xb" data-act="tplDel" data-id="${tp.id}" aria-label="${h(tp.name)} 삭제">×</button></div>`).join('') : '<div class="empty">저장된 템플릿이 없어요.</div>'}</section>
-  <section class="card"><div class="ch"><h2>화면 테마</h2><span class="muted">이 기기에만 적용돼요</span></div><div class="seg" style="align-self:flex-start">${[['auto','자동 (기기 설정)'],['light','라이트'],['dark','다크']].map(([k, l]) => `<button class="${themePref() === k ? 'on' : ''}" data-act="setTheme" data-v="${k}">${l}</button>`).join('')}</div></section>
+  <section class="card"><div class="ch"><h2>앱을 열 때 모드</h2></div><div class="seg" style="align-self:flex-start"><button class="${ls.get('wb.modeAuto', true) ? 'on' : ''}" data-act="modeAuto" data-v="1">자동 (근무시간 = 업무)</button><button class="${!ls.get('wb.modeAuto', true) ? 'on' : ''}" data-act="modeAuto" data-v="">마지막 선택 유지</button></div><span class="muted hint">자동: 평일 8:30–18:30엔 업무, 그 외엔 개인으로 열려요. 그날 직접 바꾸면 그날은 바꾼 모드로 열려요.</span></section>
+  <section class="card"><div class="ch"><h2>캘린더의 프로젝트 약칭</h2></div><div class="seg" style="align-self:flex-start"><button class="${ST().projTag !== false ? 'on' : ''}" data-act="projTag" data-v="1">보이기 (베트남·준비물 점검)</button><button class="${ST().projTag === false ? 'on' : ''}" data-act="projTag" data-v="">숨기기</button></div><span class="muted hint">프로젝트·행사에서 생긴 할 일 앞에 약칭을 붙여 구분해요. 약칭은 프로젝트의 "기본 정보"에서 바꿔요.</span></section>
+  <section class="card"><div class="ch"><h2>도움말 문구</h2><span class="muted">단축키 H</span></div><div class="seg" style="align-self:flex-start"><button class="${helpOn() ? 'on' : ''}" data-act="${helpOn() ? '' : 'toggleHelp'}">보이기</button><button class="${!helpOn() ? 'on' : ''}" data-act="${helpOn() ? 'toggleHelp' : ''}">숨기기</button></div><span class="muted hint">익숙해지면 숨겨 두세요. 화면 곳곳의 작은 안내 글이 사라져요.</span></section>
+  <section class="card"><div class="ch"><h2>화면 테마</h2><span class="muted hint">이 기기에만 적용돼요</span></div><div class="seg" style="align-self:flex-start">${[['auto','자동 (기기 설정)'],['light','라이트'],['dark','다크']].map(([k, l]) => `<button class="${themePref() === k ? 'on' : ''}" data-act="setTheme" data-v="${k}">${l}</button>`).join('')}</div></section>
   <section class="card"><h2>근무 기준</h2><div class="fgrid">
     <label class="f">출근<input class="in" type="time" id="s-ws" value="${w.start}" data-set="work.start"></label><label class="f">퇴근<input class="in" type="time" id="s-we" value="${w.end}" data-set="work.end"></label>
     <label class="f">점심 시작<input class="in" type="time" id="s-ls" value="${w.lunchS}" data-set="work.lunchS"></label><label class="f">점심 끝<input class="in" type="time" id="s-le" value="${w.lunchE}" data-set="work.lunchE"></label>
@@ -1328,35 +1363,34 @@ function vSettings(){
     <label class="f">유연근무 기존 잔여 (시간)<input class="in" type="number" step="1" id="s-fi" value="${st.flexInit}" data-set="flexInit" data-num="1"></label>
     <label class="f">보상휴무 기존 잔여 (시간)<input class="in" type="number" step="1" id="s-ci" value="${st.compInit || 0}" data-set="compInit" data-num="1"></label></div>
     <div class="muted">현재 연차 기간: ${annualPeriod()[0].replace(/-/g, '.')} ~ ${annualPeriod()[1].replace(/-/g, '.')} · 직책휴가는 쓰지 않으면 다음 달로 이월돼요.</div></section>
-  <section class="card"><div class="ch"><h2>휴일</h2><span class="muted">2026·2027 공휴일 자동 · 회사 지정 휴무일 추가</span></div>
+  <section class="card"><div class="ch"><h2>휴일</h2><span class="muted hint">2026·2027 공휴일 자동 · 회사 지정 휴무일 추가</span></div>
     ${customs.map(([d, n]) => `<div class="row" style="font-size:13px"><span style="width:100px">${d}</span><span class="grow">${h(n)}</span><button class="xb" data-act="holDel" data-d="${d}" aria-label="삭제">×</button></div>`).join('')}
     <div class="row"><input class="in" type="date" id="hol-d"><input class="in" id="hol-n" placeholder="이름 (예: 창립기념일)"><button class="btn" data-act="holAdd">추가</button></div>
     <details><summary class="muted" style="cursor:pointer">기본 공휴일 목록 보기 · 빼기</summary>${Object.keys(HOL).filter(d => d >= TODAY().slice(0, 4)).map(d => `<div class="row" style="font-size:12px;padding:3px 0"><span style="width:100px">${d}</span><span class="grow" style="${st.removedHol && st.removedHol[d] ? 'text-decoration:line-through;color:var(--fg4)' : ''}">${HOL[d]}</span><button class="btn sm ghost" data-act="holToggle" data-d="${d}">${st.removedHol && st.removedHol[d] ? '되살리기' : '근무일로'}</button></div>`).join('')}</details></section>
   <section class="card"><h2>백업 · 캘린더 알림</h2>
-    <span class="muted">휴대폰 알림: ① "캘린더 파일 내보내기"로 받은 .ics를 휴대폰 캘린더에 추가하면 1주·1일·1시간 전에 울려요 (일정이 바뀌면 다시 내보내기). ② 이 기기 알림을 켜 두면 워크보드가 열려 있을 때 1시간 전·마감 1일/1주 전에 알려줘요.</span>
+    <span class="muted hint">휴대폰 알림: ① "캘린더 파일 내보내기"로 받은 .ics를 휴대폰 캘린더에 추가하면 1주·1일·1시간 전에 울려요 (일정이 바뀌면 다시 내보내기). ② 이 기기 알림을 켜 두면 워크보드가 열려 있을 때 1시간 전·마감 1일/1주 전에 알려줘요.</span>
     <div class="fl"><button class="btn" data-act="exportIcs">캘린더 파일 내보내기 (.ics)</button><span class="muted" style="width:100%">마지막 백업: ${ST().lastBackup ? mdw(ST().lastBackup) : '없음'} · 알림을 켜 두면 출근 시각에 오늘 요약, 위임 중간 점검일에도 알려줘요.</span><button class="btn" data-act="notifyOn">${typeof Notification !== 'undefined' && Notification.permission === 'granted' ? '이 기기 알림 켜짐' : '이 기기 알림 켜기'}</button></div>
     <div class="fl"><button class="btn" data-act="exportJson">전체 백업 (.json)</button><label class="btn" for="imp">백업 불러오기<input type="file" id="imp" accept=".json,application/json" hidden></label><button class="btn" data-act="cleanup">1년 지난 완료 기록 정리</button></div>
     <span class="muted">저장 항목 ${Object.keys(S.items).length + Object.keys(S.routines).length + Object.keys(S.delegs).length + Object.keys(S.projects).length + Object.keys(S.flex).length} / 약 5,000개</span>
     <span class="muted">${S.sync === 'cloud' ? h((S.user && S.user.email) || '') + ' 계정에 저장되어 PC·휴대폰에서 같은 데이터가 보여요.' : '체험 모드: 이 브라우저에만 저장돼요. 로그인 후 백업 불러오기로 옮길 수 있어요.'}</span>
     <div class="fl">${S.sync === 'cloud' ? '<button class="btn" data-act="signOut">로그아웃</button>' : (configured() ? '<button class="btn pri" data-act="leaveLocal">구글 로그인으로 전환</button>' : '')}</div></section>
   </div><div class="col">
-  ${listEditor('areas', '업무 분류', '# 태그로 빠른 입력')}
-  ${listEditor('pareas', '개인 분류', '# 태그로 빠른 입력 → 개인')}
+  ${listEditor('areas', '업무 분류', '# 태그로 입력')}
+  ${listEditor('pareas', '개인 분류', '# 태그로 입력 → 개인')}
   ${listEditor('staff', '직원', '@이름 으로 위임')}
   <section class="card"><div class="ch"><h2>개인 목표 (주 단위)</h2></div>
     ${(st.goals || []).map((g, i) => `<div class="row"><select class="in" id="g-${i}-a" data-set="goals.${i}.area">${st.pareas.map(a => `<option value="${a.id}" ${a.id === g.area ? 'selected' : ''}>${h(a.n)}</option>`).join('')}</select><input class="in" type="number" step="0.5" id="g-${i}-h" value="${g.h}" data-set="goals.${i}.h" data-num="1" style="width:90px"><span class="muted">시간/주</span><button class="xb" data-act="listDel" data-k="goals" data-i="${i}" aria-label="삭제">×</button></div>`).join('')}
     <button class="btn" data-act="goalAdd">+ 목표 추가</button></section>
-  <section class="card"><h2>채널 태그</h2><span class="muted">${st.channels.map(h).join(' · ')} — 빠른 입력에서 #메타 처럼 분류와 함께 쓰세요.</span></section>
+  <section class="card"><h2>채널 태그</h2><span class="muted">${st.channels.map(h).join(' · ')} — 입력에서 #메타 처럼 분류와 함께 쓰세요.</span></section>
   </div></div>`;
 }
 
 /* ----- 메뉴 (모바일) ----- */
 function vMenu(){
   return `<div class="menu-grid">${manageNav().map(([k, l, b]) => `<button class="card" style="flex-direction:row;align-items:center;cursor:pointer;text-align:left" data-act="go" data-r="${k}"><b style="font-size:15px;flex:1">${l}</b>${b ? `<span class="chip c-w">${b}</span>` : ''}<span class="muted">›</span></button>`).join('')}
-  <button class="card" style="flex-direction:row;align-items:center;cursor:pointer" data-act="urgent"><b style="font-size:15px;flex:1;text-align:left;color:var(--warn)">대표님 급한 업무</b><span class="muted">밀리는 일 확인·안내문</span></button>
+  <button class="card" style="flex-direction:row;align-items:center;cursor:pointer" data-act="interruptMenu"><b style="font-size:15px;flex:1;text-align:left;color:var(--warn)">끼어든 일</b><span class="muted">방금 한 일 · 급한 요청 · 근무시간 외</span></button>
   <button class="card" style="flex-direction:row;align-items:center;cursor:pointer" data-act="report"><b style="font-size:15px;flex:1;text-align:left">주간 보고 작성</b><span class="muted">완료·진행·위임·다음 주</span></button>
   <button class="card" style="flex-direction:row;align-items:center;cursor:pointer" data-act="search"><b style="font-size:15px;flex:1;text-align:left">검색</b><span class="muted">할 일·위임·프로젝트</span></button>
-  <button class="card" style="flex-direction:row;align-items:center;cursor:pointer" data-act="interrupt"><b style="font-size:15px;flex:1;text-align:left">끼어든 일 기록</b><span class="muted">전화·회의·비품 등</span></button>
   <button class="card" style="flex-direction:row;align-items:center;cursor:pointer" data-act="endday"><b style="font-size:15px;flex:1;text-align:left">하루 마감</b><span class="muted">못 끝낸 일 넘기기</span></button></div>`;
 }
 
@@ -1375,7 +1409,14 @@ function renderModal(){
 }
 const opt = (on, act, extra, label) => `<button class="opt ${on ? 'on' : ''}" data-act="${act}" ${extra}>${label}</button>`;
 
-/* 빠른 입력 */
+/* 입력 */
+const EVT_WORDS = /(미팅|회의|방문|통화|면담|약속|점심|저녁|식사|워크숍|워크샵|교육|세미나|상담|인터뷰|촬영|박람회|설명회|출장|병원|진료|예약)/;
+function autoKind(p, f){ // 할 일 / 일정 자동 판단 (탭을 직접 고르면 그대로)
+  if (f.tab === 'event') return 'event'; if (f.tabSet) return 'task';
+  if (p.end || p.dateEnd) return 'event';
+  if (p.start && ((p.members || []).length || EVT_WORDS.test(p.title || ''))) return 'event';
+  return 'task';
+}
 function openQuick(pre){
   const tab0 = (pre && pre.tab) || 'task';
   const f = { text: '', tab: tab0, scope: V.mode === 'personal' ? 'personal' : 'work', date: pre && pre.date, time: pre && pre.time };
@@ -1387,7 +1428,7 @@ function openQuick(pre){
     const chips = [];
     if (f.tab === 'leave') { chips.push(['c-g', LT[p.ltype || 'annual']], ['c-g', mdw(date)]); }
     else {
-      if (p.freq) chips.push(['c-w', '반복 · ' + freqLabel({ freq: p.freq, days: p.days, mday: p.mday })]); else chips.push([scope === 'personal' ? 'c-p' : 'c-w', mdw(date) + (start ? ' ' + start : '')]);
+      if (p.freq) chips.push(['c-w', '반복 · ' + freqLabel({ freq: p.freq, days: p.days, mday: p.mday })]); else { chips.push(['c-g', autoKind(p, f) === 'event' ? '일정' : '할 일']); chips.push([scope === 'personal' ? 'c-p' : 'c-w', mdw(date) + (p.dateEnd ? ' ~ ' + mdw(p.dateEnd) : '') + (start ? ' ' + start + (p.end ? '–' + p.end : '') : '')]); }
       if (p.dur) chips.push(['c-g', '소요 ' + fh(p.dur)]);
       chips.push([scope === 'personal' ? 'c-p' : 'c-w', (scope === 'personal' ? '개인 · ' : '업무 · ') + (p.area ? areaName(p.area) : '분류 없음')]);
       p.ch.forEach(c => chips.push(['c-g', c]));
@@ -1398,7 +1439,7 @@ function openQuick(pre){
     }
     return chips.map(c => `<span class="chip ${c[0]}" style="font-size:12px;padding:4px 9px">${h(c[1])}</span>`).join('') + (p.title ? `<span class="muted">제목: ${h(p.title)}</span>` : '');
   };
-  openModal({ title: '빠른 입력', f, preview, focus: 'q-text', body(){
+  openModal({ title: '입력', f, preview, focus: 'q-text', body(){
     const p = parseQuick(f.text, f.tab);
     const scope = p.scope || f.scope;
     const ph = { task: '내일 14시 메타 소재 3종 2h #디자인 #메타', event: '10/6 10시 박람회장 문의 1h #행사', deleg: '@직원B 금 파워링크 제외키워드 정리 #분석', leave: '10/16 연차 · 10/1 오후반차 · 10/20 유연 2h' }[f.tab];
@@ -1406,9 +1447,9 @@ function openQuick(pre){
     <input class="in" id="q-text" data-f="text" value="${h(f.text)}" placeholder="${h(ph)}" autocomplete="off" style="height:48px;font-size:16px;border:2px solid var(--acc)" data-enter="qSave">
     <div class="fl" id="q-sug">${quickSug({ value: f.text, selectionStart: (f.text || '').length })}</div>
     <div class="fl" id="q-prev">${preview()}</div>
-    ${(ST().templates || []).length && (f.tab === 'task' || f.tab === 'event') ? `<div class="fl"><span class="muted">템플릿:</span>${ST().templates.map(tp => `<button class="opt" data-act="tplUse" data-id="${tp.id}">${h(tp.name)}</button>`).join('')}</div>` : ''}
-    <details><summary class="muted" style="cursor:pointer">입력 규칙</summary><div class="muted" style="line-height:1.9;margin-top:6px">날짜: 오늘 · 내일 · 금 · 다음주 월 · 10/5 &nbsp; 시각: 14시 · 오후 2시 반 · 14:30 &nbsp; 소요: 2h · 30분<br>#분류 (${ST().areas.map(a => '#' + a.tag).join(' ')}) · 개인 #운동 #독서 … &nbsp; 채널 #메타 #네이버<br>+이름 → 함께하는 사람 (예: +김대표 +박과장) &nbsp; @직원 → 위임 &nbsp; ~매일 · ~매주 월 · ~격주 수 · ~매월 첫/말/15일 → 반복 &nbsp; ! → 중요</div></details>
-    <div class="foot"><span class="muted">Enter로 등록 · Esc 닫기</span><span class="grow"></span><button class="btn" data-act="qDetail">자세히 입력</button><button class="btn pri" data-act="qSave">등록</button></div>`;
+    ${f.tab === 'task' || f.tab === 'event' ? `<div class="fl">${(ST().templates || []).slice(0, 5).map(tp => `<button class="opt" data-act="tplUse" data-id="${tp.id}">${h(tp.name)}</button>`).join('')}<button class="opt" data-act="loadMenu">불러오기 ▾</button></div>` : ''}
+    <details class="hint"><summary class="muted" style="cursor:pointer">입력 규칙</summary><div class="muted" style="line-height:1.9;margin-top:6px">날짜: 오늘 · 내일 · 금 · 다음주 월 · 10/5 &nbsp; 기간: 10/17~18 · 토~일 &nbsp; 시각: 14시 · 오후 2시 반 · 14:30 &nbsp; 시간대: 13~18시 · 10:30-12:00 &nbsp; 소요: 2h · 30분<br>시간대·기간이 있거나 시각 + 미팅·회의·방문 같은 말이 있으면 "일정"으로 저장돼요. 탭을 직접 고르면 그대로 따라요.<br>#분류 (${ST().areas.map(a => '#' + a.tag).join(' ')}) · 개인 #운동 #독서 … &nbsp; 채널 #메타 #네이버<br>+이름 → 함께하는 사람 (예: +김대표 +박과장) &nbsp; @직원 → 위임 &nbsp; ~매일 · ~매주 월 · ~격주 수 · ~매월 첫/말/15일 → 반복 &nbsp; ! → 중요</div></details>
+    <div class="foot"><span class="muted hint">Enter로 등록 · Esc 닫기</span><span class="grow"></span><button class="btn" data-act="qDetail">자세히 입력</button><button class="btn pri" data-act="qSave">등록</button></div>`;
   }});
 }
 async function quickSave(detail){
@@ -1419,9 +1460,10 @@ async function quickSave(detail){
   if (p.staff || f.tab === 'deleg') { closeModal(); openDeleg({ title: p.title, staff: p.staff || (ST().staff[0] || {}).id, due: p.date || add(TODAY(), 3), orig: f.text }); return; }
   if (p.freq) { closeModal(); openRoutine({ title: p.title, freq: p.freq, days: p.days, mday: p.mday, time: start, dur: p.dur || 0.5, area: p.area, scope, anchor: p.date || TODAY(), ch: p.ch }); return; }
   const id = uid();
-  const it = { kind: f.tab === 'event' ? 'event' : 'task', title: p.title, scope, area: p.area, ch: p.ch, members: p.members || [], date, start, dur: p.dur || (start ? 1 : 0.5), prio: p.prio, done: false, checklist: [], created: Date.now() };
+  const it = { kind: autoKind(p, f), title: p.title, scope, area: p.area, ch: p.ch, members: p.members || [], date, start, dur: p.dur || (start ? 1 : 0.5), prio: p.prio, done: false, checklist: [], created: Date.now() };
+  if (p.dateEnd) it.dateEnd = p.dateEnd;
   recentPush(f.text);
-  if (it.kind === 'event' && start) it.end = toHM(Math.min(23.99, hm(start) + (p.dur || 1)));
+  if (it.kind === 'event' && start) it.end = p.end || toHM(Math.min(23.99, hm(start) + (p.dur || 1)));
   if (detail) { closeModal(); openEdit(Object.assign({ id, _new: true }, it)); return; }
   await put('items', id, it); closeModal(); toast('등록했어요 · ' + mdw(date) + (start ? ' ' + start : ''));
 }
@@ -1463,7 +1505,7 @@ function urgentRes(){
     const sm = V.sim, pl = urgentPlan(), newDate = nextWorkday(sm.due);
     const msg = pl.short > 0 ? `대표님, 요청하신 [${sm.name || '신규 업무'}](약 ${sm.h}시간)를 ${mdw(sm.due)}까지 먼저 진행하겠습니다.\n이에 따라 아래 업무는 ${mdw(newDate)} 이후로 조정됩니다.\n${pl.pushed.map(i => '· ' + i.title + ' (' + mdw(i.date) + ' → ' + mdw(newDate) + ')').join('\n') || '· (조정 대상 없음)'}\n유지해야 하는 일정이 있으면 말씀해 주세요.` : `대표님, 요청하신 [${sm.name || '신규 업무'}]는 ${mdw(sm.due)}까지 기존 일정 영향 없이 진행 가능합니다.`;
     return `<div class="warnbox ${pl.short > 0 ? 'bad' : 'ok'}">오늘~${mdw(sm.due)} 여유 ${fh(pl.free)} → ${pl.short > 0 ? fh(pl.short) + ' 부족 · 아래 ' + pl.pushed.length + '건을 ' + mdw(newDate) + '로 미루면 돼요' : '기존 일정 그대로 추가 가능'}</div>
-    ${pl.pushed.length ? `<div>${pl.pushed.map(i => `<div class="row" style="font-size:13px;padding:5px 0;border-bottom:1px solid var(--line2)"><span class="grow ell">${h(i.title)}</span><span class="muted">${mdw(i.date)} · ${fh(+i.dur)} → ${mdw(newDate)}</span></div>`).join('')}<div class="muted" style="margin-top:4px">"! 중요" 표시한 업무는 밀지 않아요.</div></div>` : ''}
+    ${pl.pushed.length ? `<div>${pl.pushed.map(i => `<div class="row" style="font-size:13px;padding:5px 0;border-bottom:1px solid var(--line2)"><span class="grow ell">${h(i.title)}</span><span class="muted">${mdw(i.date)} · ${fh(+i.dur)} → ${mdw(newDate)}</span></div>`).join('')}<div class="muted hint" style="margin-top:4px">"! 중요" 표시한 업무는 밀지 않아요.</div></div>` : ''}
     <div class="ch"><b style="font-size:13px">대표님 안내문</b><span class="grow"></span><button class="btn sm" data-act="copy" data-text="${h(msg)}">복사</button></div>
     <div style="background:var(--surface2);border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:13px;white-space:pre-wrap;line-height:1.6">${h(msg)}</div>
     <div class="foot"><span class="grow"></span><button class="btn" data-act="urgentAdd" data-move="">할 일만 추가</button>${pl.pushed.length ? `<button class="btn pri" data-act="urgentAdd" data-move="1">추가하고 ${pl.pushed.length}건 미루기</button>` : ''}</div>`;
@@ -1495,10 +1537,10 @@ function openReport(){
   const f = { ws: weekStart(V.cur), hours: false, txt: null };
   openModal({ title: '주간 보고 작성', cls: 'wide', f, body(){ const txt = weeklyReport(f.ws, f); return `<div class="fl"><button class="ib" data-act="rpMove" data-d="-7" aria-label="이전 주">‹</button><b>${md(f.ws)} ~ ${md(add(f.ws, 6))}</b><button class="ib" data-act="rpMove" data-d="7" aria-label="다음 주">›</button><span class="grow"></span>${opt(f.hours, 'rpHours', '', '소요 시간 표시')}</div>
     <textarea class="in" id="rp-txt" rows="16" style="font-size:13px;line-height:1.6;font-family:var(--sans)">${h(txt)}</textarea>
-    <div class="foot"><span class="muted">바로 고쳐 쓸 수 있어요. 복사하면 수정한 내용 그대로 복사돼요.</span><span class="grow"></span><button class="btn pri" data-act="rpCopy">복사</button></div>`; } });
+    <div class="foot"><span class="muted hint">바로 고쳐 쓸 수 있어요. 복사하면 수정한 내용 그대로 복사돼요.</span><span class="grow"></span><button class="btn pri" data-act="rpCopy">복사</button></div>`; } });
 }
 
-/* 빠른 입력 자동완성 */
+/* 입력 자동완성 */
 function recentPush(t){ t = (t || '').trim(); if (!t) return; const r = ls.get('wb.recent', []).filter(x => x !== t); r.unshift(t); ls.set('wb.recent', r.slice(0, 8)); }
 function curToken(el){ const v = el.value, pos = el.selectionStart == null ? v.length : el.selectionStart; const m = v.slice(0, pos).match(/(^|\s)([#@+])([^\s#@+]*)$/); return m ? { sym: m[2], q: m[3], start: pos - m[3].length - 1, end: pos } : null; }
 function quickSug(el){
@@ -1510,7 +1552,7 @@ function quickSug(el){
   if (tk.sym === '@') c = ST().staff.map(x => [x.n, x.role || '직원 → 위임']);
   if (tk.sym === '+') c = knownMembers().map(n => [n, '함께']);
   c = c.filter(x => !tk.q || x[0].indexOf(tk.q) >= 0 || x[1].indexOf(tk.q) >= 0).slice(0, 8);
-  return c.length ? c.map((x, i) => `<button class="opt ${i === 0 ? 'on' : ''}" data-act="qSug" data-v="${h(tk.sym + x[0])}">${h(tk.sym + x[0])} <span class="muted" style="font-size:11px">${h(x[1])}</span></button>`).join('') + '<span class="muted" style="font-size:11px">Tab = 첫 번째 선택</span>' : '';
+  return c.length ? c.map((x, i) => `<button class="opt ${i === 0 ? 'on' : ''}" data-act="qSug" data-v="${h(tk.sym + x[0])}">${h(tk.sym + x[0])} <span class="muted" style="font-size:11px">${h(x[1])}</span></button>`).join('') + '<span class="muted hint" style="font-size:11px">Tab = 첫 번째 선택</span>' : '';
 }
 function applySug(v){ const el = $('q-text'); if (!el) return; const tk = curToken(el); const val = el.value; const nv = tk ? val.slice(0, tk.start) + v + ' ' + val.slice(tk.end).replace(/^\s+/, '') : val + (val.endsWith(' ') ? '' : ' ') + v + ' '; el.value = nv; M.f.text = nv; const pos = (tk ? tk.start : val.length) + v.length + 1; el.focus(); try { el.setSelectionRange(pos, pos); } catch (e) {} $('q-prev').innerHTML = M.preview(); $('q-sug').innerHTML = quickSug(el); }
 
@@ -1529,7 +1571,7 @@ function openSearch(){
   openModal({ title: '검색', f: { q: '' }, focus: 'sr-q', body(){ return `<input class="in" id="sr-q" data-f="q" value="${h(M.f.q)}" placeholder="할 일 · 일정 · 위임 · 프로젝트 · 함께한 사람 검색" autocomplete="off" style="height:46px;font-size:16px" data-enter="srFirst"><div id="sr-res" class="col" style="gap:4px">${searchRes()}</div>`; } });
 }
 function searchRes(){
-  const q = M && M.f.q || ''; if (!q.trim()) return '<span class="muted">두 글자 정도 입력하면 바로 찾아요. 예: 대관, 메타, 김대표</span>';
+  const q = M && M.f.q || ''; if (!q.trim()) return '<span class="muted hint">두 글자 정도 입력하면 바로 찾아요. 예: 대관, 메타, 김대표</span>';
   const r = searchAll(q); if (!r.length) return '<div class="empty">찾는 내용이 없어요.</div>';
   return r.map(x => `<button class="item" style="border:1px solid var(--line);width:100%;text-align:left;align-items:center" data-act="${x.act}" data-id="${x.id}" data-s="${x.id}"><span class="chip ${x.c}" style="width:58px;justify-content:center">${x.k}</span><span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px"><span class="ell" style="font-size:13px;font-weight:600">${h(x.t)}</span><span class="muted ell">${h(x.sub)}</span></span></button>`).join('');
 }
@@ -1546,6 +1588,7 @@ function openPostpone(id){
 async function moveItem(id, date, start, why){
   const i = S.items[id]; if (!i || !date) return;
   const o = Object.assign({}, i, { date, hist: (i.hist || []).concat([{ from: i.date, to: date, why: why || '', at: TODAY() }]) });
+  if (i.dateEnd && i.date) o.dateEnd = add(i.dateEnd, Math.round((P(date) - P(i.date)) / 864e5));
   if (start !== undefined) { const len = i.kind === 'event' && i.start && i.end ? hm(i.end) - hm(i.start) : null; o.start = start; if (start && i.kind === 'event') o.end = toHM(Math.min(23.99, hm(start) + (len || +i.dur || 1))); }
   await put('items', id, o);
 }
@@ -1578,7 +1621,7 @@ function openEdit(src){
     ${membersField(f)}
     <div class="card" style="background:var(--surface2);border:0;gap:8px">
       <div class="ch"><b style="font-size:13px">${f.kind === 'event' ? '날짜 · 시간' : '기한 · 시간'}</b>${f.date ? `<span class="chip ${f.date < TODAY() && !f.done ? 'c-bad' : f.date <= add(TODAY(), 2) ? 'c-warn' : 'c-g'}">${dday(f.date)}</span>` : ''}</div>
-      <div class="fgrid"><label class="f">날짜<input class="in" type="date" id="e-date" data-f="date" value="${h(f.date || '')}"></label><label class="f">시작 (선택)<input class="in" type="time" id="e-start" data-f="start" value="${h(f.start || '')}"></label>
+      <div class="fgrid"><label class="f">${f.kind === 'event' ? '시작일' : '날짜'}<input class="in" type="date" id="e-date" data-f="date" value="${h(f.date || '')}"></label>${f.kind === 'event' ? `<label class="f">종료일 (여러 날일 때)<input class="in" type="date" id="e-dend" data-f="dateEnd" value="${h(f.dateEnd || '')}" min="${h(f.date || '')}"></label>` : ''}<label class="f">시작 (선택)<input class="in" type="time" id="e-start" data-f="start" value="${h(f.start || '')}"></label>
       ${f.kind === 'event' ? `<label class="f">끝<input class="in" type="time" id="e-end" data-f="end" value="${h(f.end || '')}"></label>` : `<label class="f">예상 소요 (시간)<input class="in" type="number" min="0" step="0.25" id="e-dur" data-f="dur" data-num="1" value="${h(f.dur || '')}"></label>`}</div>
       <div class="fl">${[['+1h', 'h1'], ['내일', 'd1'], ['+3 근무일', 'w3'], ['다음 주 월', 'nm']].map(([l, k]) => `<button class="opt" data-act="eQuick" data-k="${k}">${l}</button>`).join('')}</div>
       ${f.date ? `<div class="warnbox ${over ? 'bad' : ''}" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="grow">${isOff(f.date) ? mdw(f.date) + ' ' + h(holName(f.date) || '주말') + ' — 휴일이에요' : scope === 'work' ? mdw(f.date) + ' 배정 ' + fh(tot) + ' / 가용 ' + fh(cap) + (over ? ' · ' + fh(tot - cap) + ' 초과' : '') : '개인 일정'}${f.start && hm(f.start) >= hm(ST().work.end) && scope === 'work' ? ' · 근무시간 이후 (시간외로 기록돼요)' : ''}</span>${over && free ? `<button class="btn sm" data-act="eSet" data-k="date" data-v="${free}">빈 날로: ${mdw(free)}</button>` : ''}</div>` : ''}
@@ -1591,7 +1634,7 @@ function openEdit(src){
     <label class="f">메모<textarea class="in" id="e-memo" data-f="memo" rows="3">${h(f.memo || '')}</textarea></label>
     ${f._fin ? `<div class="card" style="background:var(--acc-soft);border:0;gap:8px"><b style="font-size:13px">실제 걸린 시간 ${f.dur ? '(예상 ' + fh(+f.dur) + ')' : ''}</b><div class="fl">${[0.25, 0.5, 1, 1.5, 2, 3, 4].map(x => `<button class="opt" data-act="eFinish" data-v="${x}">${fh(x)}</button>`).join('')}<button class="opt" data-act="eFinish" data-v="">건너뛰기</button></div></div>` : ''}
     ${f.date && f.title ? `<a class="btn sm" style="align-self:flex-start;text-decoration:none" target="_blank" rel="noopener" href="${gcalUrl(f)}">구글 캘린더에 추가 (휴대폰 알림용)</a>` : ''}
-    <div class="foot">${f._new ? '' : `<button class="btn ghost" data-act="eDelete">삭제</button>`}<span class="grow"></span>${!f._new && f.kind === 'task' ? `<button class="btn" data-act="eSet" data-k="_fin" data-v="${f._fin ? '' : '1'}">${f.done ? '미완료로' : '완료 처리'}</button>` : ''}<button class="btn" data-act="tplSave" title="제목·분류·체크리스트·소요 시간을 저장해 두고 빠른 입력에서 불러와요">템플릿으로 저장</button><button class="btn pri" data-act="eSave">저장 <span class="kbd" style="background:transparent;color:#fff;border-color:rgba(255,255,255,.5)">Ctrl+Enter</span></button></div>`;
+    <div class="foot">${f._new ? '' : `<button class="btn ghost" data-act="eDelete">삭제</button>`}<span class="grow"></span>${!f._new && f.kind === 'task' ? `<button class="btn" data-act="eSet" data-k="_fin" data-v="${f._fin ? '' : '1'}">${f.done ? '미완료로' : '완료 처리'}</button>` : ''}<button class="btn" data-act="tplSave" title="제목·분류·체크리스트·소요 시간을 저장해 두고 입력 창에서 불러와요">템플릿으로 저장</button><button class="btn pri" data-act="eSave">저장 <span class="kbd" style="background:transparent;color:#fff;border-color:rgba(255,255,255,.5)">Ctrl+Enter</span></button></div>`;
   }});
 }
 async function editSave(extra){
@@ -1603,6 +1646,8 @@ async function editSave(extra){
   if (f._mb && f._mb.trim()) f.members = (f.members || []).concat(f._mb.split(/[,\s]+/).filter(Boolean));
   ['_new','_orig','_reason','_ck','_fin','_mb','id','up'].forEach(k => delete f[k]);
   if (f.dur !== undefined && f.dur !== '') f.dur = +f.dur;
+  if (!f.dateEnd || f.kind !== 'event' || f.dateEnd <= f.date) delete f.dateEnd;
+  if (f.kind === 'event' && f.start && f.end && hm(f.end) > hm(f.start)) f.dur = r2(hm(f.end) - hm(f.start));
   await put('items', id, f); closeModal(); toast('저장했어요');
 }
 
@@ -1638,10 +1683,10 @@ function openDeleg(src){
       <label class="f">지시 원문 붙여넣기<textarea class="in" id="d-orig" data-f="orig" rows="5" placeholder="메신저에서 보낸 지시 내용을 그대로 붙여넣으세요">${h(f.orig)}</textarea></label>
       <button class="btn" data-act="dSplit">원문에서 가이드라인 뽑기</button>
     </div><div class="col" style="gap:10px">
-      <div class="card" style="background:var(--surface2);border:0;gap:6px"><div class="ch"><b style="font-size:13px">가이드라인</b><span class="muted">검수 때 반드시 확인</span></div>
+      <div class="card" style="background:var(--surface2);border:0;gap:6px"><div class="ch"><b style="font-size:13px">가이드라인</b><span class="muted hint">검수 때 반드시 확인</span></div>
         ${f.guides.map((g, i) => `<div class="row" style="background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:4px 4px 4px 10px;font-size:13px"><span class="grow">${h(g.t)}</span><button class="btn sm ghost" data-act="dMove" data-i="${i}" data-to="auto">자율로 →</button><button class="xb" data-act="dGDel" data-i="${i}" aria-label="삭제">×</button></div>`).join('')}
         <div class="row"><input class="in" id="d-g" data-f="_g" value="${h(f._g || '')}" placeholder="꼭 포함할 것 (Enter)" data-enter="dGAdd"><button class="btn" data-act="dGAdd">+</button></div></div>
-      <div class="card" style="border-style:dashed;gap:6px"><div class="ch"><b style="font-size:13px">자율 영역</b><span class="muted">직원 판단 · 검수 제외</span></div>
+      <div class="card" style="border-style:dashed;gap:6px"><div class="ch"><b style="font-size:13px">자율 영역</b><span class="muted hint">직원 판단 · 검수 제외</span></div>
         <div class="fl">${f.autos.map((a, i) => `<button class="chip c-g" style="border:0;cursor:pointer;font-weight:500" data-act="dMove" data-i="${i}" data-to="guide">← ${h(a)}</button>`).join('') || '<span class="muted">없음</span>'}</div>
         <div class="row"><input class="in" id="d-a" data-f="_a" value="${h(f._a || '')}" placeholder="자율로 둘 것 (Enter)" data-enter="dAAdd"><button class="btn" data-act="dAAdd">+</button></div></div>
     </div></div>
@@ -1681,14 +1726,14 @@ function prevWorkday(s){ let k = add(s, -1); for (let i = 0; i < 20 && isOff(k);
 function snapWd(s){ let k = s; for (let i = 0; i < 10 && isOff(k); i++) k = add(k, -1); return k; } // 주말·공휴일이면 앞 근무일로
 function npAnchor(f){ return f.type === '행사' && f.base ? prevWorkday(f.base) : f.base; } // 행사는 시작 전날(근무일)까지 준비 단계를 끝내도록
 function calData(f){ // 모달 값 → 저장 필드
-  if (f.type === '행사') return { evS: f.base || null, evE: f.evE && f.evE >= f.base ? f.evE : (f.base || null), keyDate: f.base || null, keyLabel: '행사일', block: f.block !== false, showCal: f.showCal !== false };
+  if (f.type === '행사') return { evS: f.base || null, evE: f.evE && f.evE >= f.base ? f.evE : (f.base || null), keyDate: f.base || null, keyLabel: '행사일', block: f.block === true, evStaff: (f.evStaff || '').trim(), showCal: f.showCal !== false };
   return { keyDate: f.base || null, keyLabel: (f.keyLabelC || '').trim() || f.keyLabel || '마감일', evS: null, evE: null, showCal: f.showCal !== false };
 }
 function editUnit(pid, i, j, fn){ const p = clean(S.projects[pid]); const st = p.steps[i]; if (!st) return; fn(j < 0 ? st : st.subs[j]); put('projects', pid, p); }
 function openProjectNew(copyFrom){
   const isCopy = copyFrom !== null && copyFrom !== undefined && Object.keys(S.projects).length > 0;
   const srcP = isCopy ? (S.projects[copyFrom] || Object.values(S.projects).sort((x, y) => (y.star ? 1 : 0) - (x.star ? 1 : 0))[0]) : null;
-  const f = { mode: isCopy ? 'copy' : 'blank', src: srcP ? srcP.id : (Object.values(S.projects)[0] || {}).id, name: srcP ? srcP.name + ' (복사)' : '', type: srcP ? srcP.type || '프로젝트' : '프로젝트', area: '', base: add(TODAY(), 30), keyLabel: srcP ? srcP.keyLabel || '마감일' : '마감일', showCal: true, block: true, evE: '',
+  const f = { mode: isCopy ? 'copy' : 'blank', src: srcP ? srcP.id : (Object.values(S.projects)[0] || {}).id, name: srcP ? srcP.name + ' (복사)' : '', type: srcP ? srcP.type || '프로젝트' : '프로젝트', area: '', base: add(TODAY(), 30), keyLabel: srcP ? srcP.keyLabel || '마감일' : '마감일', showCal: true, block: false, evE: '', evStaff: '',
     steps: STEPS_P.map(t => ({ t })), gap: 5 };
   openModal({ title: isCopy ? '복사해 새로 만들기' : '새 프로젝트 · 행사', cls: 'wide', f, focus: 'np-name', body(){
     const src = S.projects[f.src];
@@ -1700,14 +1745,14 @@ function openProjectNew(copyFrom){
     let cap = 0, asg = 0; for (let s = TODAY(); s <= f.base; s = add(s, 1)) { cap += workCap(s); asg += assignedWork(s); }
     return `<div class="fl"><div class="seg"><button class="${f.mode === 'blank' ? 'on' : ''}" data-act="npSet" data-k="mode" data-v="blank">빈 프로젝트</button><button class="${f.mode === 'copy' ? 'on' : ''}" data-act="npSet" data-k="mode" data-v="copy" ${Object.keys(S.projects).length ? '' : 'disabled'}>기존 것 복사</button></div></div>
     ${f.mode === 'copy' ? `<div class="fl"><span class="muted">원본</span>${Object.values(S.projects).sort((a, b) => (b.star ? 1 : 0) - (a.star ? 1 : 0)).map(p => opt(f.src === p.id, 'npSet', `data-k="src" data-v="${p.id}"`, (p.star ? '★ ' : '') + h(p.name))).join('')}</div>` : ''}
-    <label class="f">이름<input class="in" id="np-name" data-f="name" value="${h(f.name)}" placeholder="${f.type === '행사' ? '예: 하나투어 여행박람회' : '예: 동남아 랜딩페이지'}"></label>
-    <div class="fl">${[['프로젝트', '결과물을 만드는 일'], ['행사', '날짜가 정해진 박람회·설명회'], ['추적', '진행 상황만 챙길 일']].map(([t, d]) => opt(f.type === t, 'npSet', `data-k="type" data-v="${t}" title="${d}"`, t)).join('')}<select class="in" id="np-area" data-f="area" style="width:auto"><option value="">대표 분류 없음</option>${ST().areas.map(a => `<option value="${a.id}" ${a.id === f.area ? 'selected' : ''}>${h(a.n)}</option>`).join('')}</select></div>
+    <div class="fgrid"><label class="f">이름<input class="in" id="np-name" data-f="name" value="${h(f.name)}" placeholder="${f.type === '행사' ? '예: 하나투어 여행박람회' : '예: 동남아 랜딩페이지'}"></label><label class="f">캘린더 약칭 (비우면 자동)<input class="in" id="np-abbr" data-f="abbr" value="${h(f.abbr || '')}" maxlength="6" placeholder="${h(abbrOf({ name: f.name }) || '예: 베트남')}"></label></div>
+    <div class="fl">${[['프로젝트', '결과물을 만드는 일'], ['행사', '날짜가 정해진 박람회·설명회'], ['모니터링', '직접 만들진 않고 진행 상황만 확인할 일 (예: 대관 가능 여부 확인)']].map(([t, d]) => opt(typeLabel(f.type) === t, 'npSet', `data-k="type" data-v="${t}" title="${d}"`, t)).join('')}<select class="in" id="np-area" data-f="area" style="width:auto"><option value="">대표 분류 없음</option>${ST().areas.map(a => `<option value="${a.id}" ${a.id === f.area ? 'selected' : ''}>${h(a.n)}</option>`).join('')}</select></div>
     ${calFields(f)}
-    <div class="muted">${f.mode === 'copy' ? '원본의 마지막 단계가 ' + (f.type === '행사' ? '행사 시작일' : '대표 날짜') + '에 맞춰지고, 나머지 단계도 같은 간격으로 옮겨져요.' : '단계 기한은 ' + (f.type === '행사' ? '행사 전날(근무일)' : '대표 날짜') + '에서 거꾸로 ' + f.gap + '일 간격으로 잡혀요.'}</div>
+    <div class="muted hint">${f.mode === 'copy' ? '원본의 마지막 단계가 ' + (f.type === '행사' ? '행사 시작일' : '대표 날짜') + '에 맞춰지고, 나머지 단계도 같은 간격으로 옮겨져요.' : '단계 기한은 ' + (f.type === '행사' ? '행사 전날(근무일)' : '대표 날짜') + '에서 거꾸로 ' + f.gap + '일 간격으로 잡혀요.'}</div>
     <div class="tbl"><div class="tr hd" style="grid-template-columns:minmax(0,1fr) 90px 90px 28px"><span>단계</span><span>${f.mode === 'copy' ? '원본' : ''}</span><span>새 날짜</span><span></span></div>
     ${preview.map((x, i) => `<div class="tr" style="grid-template-columns:minmax(0,1fr) 90px 90px 28px"><span class="ell">${h(x.t)}</span><span class="muted">${x.from ? md(x.from) : ''}</span><b>${x.to ? mdw(x.to) : '—'}</b>${f.mode === 'blank' ? `<button class="xb" data-act="npDel" data-i="${i}" aria-label="삭제">×</button>` : '<span></span>'}</div>`).join('')}</div>
     ${f.mode === 'blank' ? `<div class="row"><input class="in" id="np-step" data-f="_s" value="${h(f._s || '')}" placeholder="단계 추가 (Enter)" data-enter="npAdd"><button class="btn" data-act="npAdd">+ 추가</button><span class="muted" style="white-space:nowrap">간격</span><input class="in" type="number" min="1" id="np-gap" data-f="gap" data-num="1" value="${f.gap}" style="width:70px"><span class="muted">일</span></div>` : ''}
-    <div class="warnbox">오늘~${mdw(f.base)} 업무 여유 ${fh(cap - asg)} · 만들면 각 단계가 내 할 일로 바로 등록돼요. 하위업무·담당 직원은 만든 뒤 프로젝트 화면에서 추가하세요.</div>
+    <div class="warnbox">오늘~${mdw(f.base)} 업무 여유 ${fh(cap - asg)}<span class="hint"> · 만들면 각 단계가 내 할 일로 바로 등록돼요. 하위업무·담당 직원은 만든 뒤 프로젝트 화면에서 추가하세요.</span></div>
     <div class="foot"><span class="grow"></span><button class="btn pri" data-act="npSave">만들기</button></div>`;
   }});
 }
@@ -1746,7 +1791,7 @@ function openEndDay(){
       ${cands.length ? cands.map(i => `<button class="item" style="border:1px solid ${f.top[i.id] ? 'var(--acc-line)' : 'var(--line)'};background:${f.top[i.id] ? 'var(--acc-soft)' : 'var(--surface)'};width:100%;text-align:left;align-items:center;${!f.top[i.id] && nTop >= 3 ? 'opacity:.5' : ''}" data-act="edTop" data-id="${i.id}"><span class="cb ${f.top[i.id] ? 'on' : ''}">${f.top[i.id] ? '✓' : ''}</span><span style="font-size:13px;flex:1">${h(i.title)}</span><span class="muted">${i.dur ? fh(+i.dur) : ''}</span></button>`).join('') : '<div class="empty">다음 근무일 할 일이 아직 없어요.</div>'}
       <button class="btn" data-act="newExtra">+ 오늘 근무시간 외 업무 기록</button>
     </div></div>
-    <div class="foot"><span class="muted">마감하면 할 일이 바로 옮겨져요</span><span class="grow"></span><button class="btn pri" data-act="edSave">마감 완료</button></div>`;
+    <div class="foot"><span class="muted hint">마감하면 할 일이 바로 옮겨져요</span><span class="grow"></span><button class="btn pri" data-act="edSave">마감 완료</button></div>`;
   }});
 }
 
@@ -1754,7 +1799,7 @@ function openEndDay(){
 function openInterrupt(){
   const f = { t: '', area: 'support', min: 30 };
   openModal({ title: '끼어든 일 기록', f, focus: 'it-t', body(){
-    return `<span class="muted">담당 외 일(전화, 회의, 비품…)도 기록해 두면 리소스에서 "담당 외 지원" 시간으로 보여요.</span>
+    return `<span class="muted hint">담당 외 일(전화, 회의, 비품…)도 기록해 두면 리소스에서 "담당 외 지원" 시간으로 보여요.</span>
     <div class="fl">${SUPPORT_PRESETS.map(p => opt(f.t === p, 'itSet', `data-k="t" data-v="${h(p)}"`, h(p))).join('')}</div>
     <input class="in" id="it-t" data-f="t" value="${h(f.t)}" placeholder="직접 입력">
     <label class="f">분류<select class="in" id="it-area" data-f="area">${ST().areas.map(a => `<option value="${a.id}" ${a.id === f.area ? 'selected' : ''}>${h(a.n)}</option>`).join('')}</select></label>
@@ -1765,7 +1810,7 @@ function openInterrupt(){
 function openExtra(){
   const f = { date: TODAY(), start: ST().work.lunchS, end: toHM(hm(ST().work.lunchS) + 0.5), note: '' };
   openModal({ title: '근무시간 외 업무 기록', f, focus: 'x-note', body(){
-    return `<span class="muted">점심·퇴근 후·휴일에 한 업무를 기록해요. 자동 적립되지 않고, 승인받으면 근태 화면에서 유연근무 또는 보상휴무로 전환하세요.</span>
+    return `<span class="muted hint">점심·퇴근 후·휴일에 한 업무를 기록해요. 자동 적립되지 않고, 승인받으면 근태 화면에서 유연근무 또는 보상휴무로 전환하세요.</span>
     <div class="fgrid"><label class="f">날짜<input class="in" type="date" id="x-date" data-f="date" value="${f.date}"></label><label class="f">내용<input class="in" id="x-note" data-f="note" value="${h(f.note)}" placeholder="예: 광고 긴급 수정"></label><label class="f">시작<input class="in" type="time" id="x-s" data-f="start" value="${f.start}"></label><label class="f">끝<input class="in" type="time" id="x-e" data-f="end" value="${f.end}"></label></div>
     <div class="foot"><span class="grow"></span><button class="btn pri" data-act="xSave">기록</button></div>`;
   }});
@@ -1777,7 +1822,7 @@ function openFlex(bk){
     <div class="seg" style="align-self:flex-start"><button class="${f.kind === 'earn' ? 'on' : ''}" data-act="fxSet" data-v="earn">적립 (승인된 건)</button><button class="${f.kind === 'use' ? 'on' : ''}" data-act="fxSet" data-v="use">사용</button></div>
     <div class="fgrid"><label class="f">날짜<input class="in" type="date" id="fx-d" data-f="date" value="${f.date}"></label><label class="f">시간${f.kind === 'use' ? ' (1시간 단위)' : ''}<input class="in" type="number" step="${f.kind === 'use' ? 1 : 0.5}" min="${f.kind === 'use' ? 1 : 0.5}" id="fx-h" data-f="h" data-num="1" value="${f.h}"></label></div>
     <label class="f">${f.kind === 'earn' ? '내용 · 승인자' : '내용'}<input class="in" id="fx-n" data-f="note" value="${h(f.note)}" placeholder="${f.kind === 'earn' ? (f.bank === 'comp' ? '예: 박람회 토요일 근무 · 대표님 승인' : '예: 야근 2시간 · 본부장님 승인') : '예: 조기 퇴근'}"></label>
-    <div class="muted">하루 단위 사용은 "휴가 · 근태 등록"에서 ${f.bank === 'comp' ? '보상휴무' : '유연근무'} 사용으로 등록하면 그날 업무 가용시간도 줄어요.</div>
+    <div class="muted hint">하루 단위 사용은 "휴가 · 근태 등록"에서 ${f.bank === 'comp' ? '보상휴무' : '유연근무'} 사용으로 등록하면 그날 업무 가용시간도 줄어요.</div>
     <div class="foot"><span class="grow"></span><button class="btn pri" data-act="fxSave">저장</button></div>`;
   }});
 }
@@ -1800,8 +1845,8 @@ function openOnboard(){
     <label class="f">유연근무 기존 잔여 (시간)<input class="in" type="number" step="1" id="o-fi" value="${st.flexInit}" data-set="flexInit" data-num="1"></label>
     <label class="f">보상휴무 기존 잔여 (시간)<input class="in" type="number" step="1" id="o-ci" value="${st.compInit || 0}" data-set="compInit" data-num="1"></label></div>
     <div class="muted">현재 연차 기간: ${annualPeriod()[0].replace(/-/g, '.')} ~ ${annualPeriod()[1].replace(/-/g, '.')} · 직책휴가는 쓰지 않으면 다음 달로 이월돼요.</div>`;
-    if (f.step === 3) body = `<div class="muted">업무 분류 11개 · 개인 분류 12개 · 직원 3명이 기본으로 들어 있어요. 설정에서 언제든 바꿀 수 있어요.</div><div class="fl">${st.areas.map(a => `<span class="chip c-w" style="font-size:12px;padding:4px 9px">${h(a.n)} #${h(a.tag)}</span>`).join('')}</div><div class="fl">${st.staff.map((s, i) => `<input class="in" id="o-st-${i}" value="${h(s.n)}" data-set="staff.${i}.n" style="width:120px">`).join('')}</div>`;
-    if (f.step === 4) body = `<div class="muted">자주 하는 반복업무를 골라 두면 매일·매주 자동으로 생겨요.</div>${REC_ROUTINES.map((r, i) => `<button class="item" style="border:1px solid var(--line);width:100%;text-align:left;align-items:center" data-act="obPick" data-i="${i}"><span class="cb ${f.pick[i] ? 'on' : ''}">${f.pick[i] ? '✓' : ''}</span><span style="flex:1;font-size:13px">${h(r.title)}</span><span class="muted">${h(freqLabel(r))}${r.time ? ' ' + r.time : ''}</span></button>`).join('')}`;
+    if (f.step === 3) body = `<div class="muted hint">업무 분류 11개 · 개인 분류 12개 · 직원 3명이 기본으로 들어 있어요. 설정에서 언제든 바꿀 수 있어요.</div><div class="fl">${st.areas.map(a => `<span class="chip c-w" style="font-size:12px;padding:4px 9px">${h(a.n)} #${h(a.tag)}</span>`).join('')}</div><div class="fl">${st.staff.map((s, i) => `<input class="in" id="o-st-${i}" value="${h(s.n)}" data-set="staff.${i}.n" style="width:120px">`).join('')}</div>`;
+    if (f.step === 4) body = `<div class="muted hint">자주 하는 반복업무를 골라 두면 매일·매주 자동으로 생겨요.</div>${REC_ROUTINES.map((r, i) => `<button class="item" style="border:1px solid var(--line);width:100%;text-align:left;align-items:center" data-act="obPick" data-i="${i}"><span class="cb ${f.pick[i] ? 'on' : ''}">${f.pick[i] ? '✓' : ''}</span><span style="flex:1;font-size:13px">${h(r.title)}</span><span class="muted">${h(freqLabel(r))}${r.time ? ' ' + r.time : ''}</span></button>`).join('')}`;
     return nav + body + `<div class="foot">${f.step > 1 ? `<button class="btn" data-act="obPrev">이전</button>` : ''}<span class="grow"></span><button class="btn ghost" data-act="obSkip">나중에</button>${f.step < 4 ? `<button class="btn pri" data-act="obNext">다음</button>` : `<button class="btn pri" data-act="obDone">시작하기</button>`}</div>`;
   }});
 }
@@ -1846,7 +1891,7 @@ function buildIcs(){
   const push = (id, title, s, t, e, desc) => { const alarms = ['-P1W', '-P1D', '-PT1H'].map(tr => `BEGIN:VALARM\r\nACTION:DISPLAY\r\nDESCRIPTION:${esc(title)}\r\nTRIGGER:${tr}\r\nEND:VALARM`).join('\r\n');
     ev.push(`BEGIN:VEVENT\r\nUID:${id}@workboard\r\nDTSTAMP:${dt(TODAY())}T000000\r\n${t ? `DTSTART;TZID=Asia/Seoul:${dt(s, t)}\r\nDTEND;TZID=Asia/Seoul:${dt(s, e || toHM(Math.min(23.99, hm(t) + 1)))}` : `DTSTART;VALUE=DATE:${dt(s)}\r\nDTEND;VALUE=DATE:${dt(add(s, 1))}`}\r\nSUMMARY:${esc(title)}\r\n${desc ? 'DESCRIPTION:' + esc(desc) + '\r\n' : ''}${alarms}\r\nEND:VEVENT`); };
   const from = TODAY();
-  Object.values(S.items).forEach(i => { if (!i.date || i.date < from) return; if ((i.kind === 'task' && !i.done) || i.kind === 'event') push(i.id, (i.scope === 'personal' ? '[개인] ' : '') + i.title, i.date, i.start, i.end, [memTxt(i), i.memo].filter(Boolean).join('\n')); if (i.kind === 'leave') push(i.id, LT[i.ltype], i.date); });
+  Object.values(S.items).forEach(i => { if (!i.date || i.date < from) return; if ((i.kind === 'task' && !i.done) || i.kind === 'event') { const ttl = (i.scope === 'personal' ? '[개인] ' : '') + (ptag(i) ? '[' + ptag(i) + '] ' : '') + i.title, ds = [memTxt(i), i.memo].filter(Boolean).join('\n'); if (i.dateEnd && i.dateEnd > i.date) { if (i.start) { for (let d = i.date; d <= i.dateEnd; d = add(d, 1)) push(i.id + '-' + d, ttl, d, i.start, i.end, ds); } else ev.push(`BEGIN:VEVENT\r\nUID:${i.id}@workboard\r\nDTSTAMP:${dt(TODAY())}T000000\r\nDTSTART;VALUE=DATE:${dt(i.date)}\r\nDTEND;VALUE=DATE:${dt(add(i.dateEnd, 1))}\r\nSUMMARY:${esc(ttl)}\r\nBEGIN:VALARM\r\nACTION:DISPLAY\r\nDESCRIPTION:${esc(ttl)}\r\nTRIGGER:-P1D\r\nEND:VALARM\r\nEND:VEVENT`); } else push(i.id, ttl, i.date, i.start, i.end, ds); } if (i.kind === 'leave') push(i.id, LT[i.ltype], i.date); });
   Object.values(S.projects).forEach(p => { if (!projOnCal(p) || (p.status || 'active') !== 'active') return; if (isEvt(p)) { const r = evRange(p); if (r && r[1] >= from) ev.push(`BEGIN:VEVENT\r\nUID:${p.id}-ev@workboard\r\nDTSTAMP:${dt(TODAY())}T000000\r\nDTSTART;VALUE=DATE:${dt(r[0])}\r\nDTEND;VALUE=DATE:${dt(add(r[1], 1))}\r\nSUMMARY:${esc('[행사] ' + p.name)}\r\n${['-P1W', '-P1D'].map(tr => `BEGIN:VALARM\r\nACTION:DISPLAY\r\nDESCRIPTION:${esc(p.name)}\r\nTRIGGER:${tr}\r\nEND:VALARM`).join('\r\n')}\r\nEND:VEVENT`); } else if (p.keyDate && p.keyDate >= from) push(p.id + '-key', '[' + (p.keyLabel || '마감일') + '] ' + p.name, p.keyDate); });
   Object.values(S.delegs).forEach(d => { if (d.due && d.due >= from && !['closed','stopped'].includes(d.status)) push(d.id, '[위임 마감] ' + staffName(d.staff) + ' · ' + d.title, d.due); });
   Object.values(S.projects).forEach(p => { if ((p.status || 'active') === 'active') (p.steps || []).forEach((x, i) => { if (x.due && x.due >= from && (x.subs || []).length && !stepDone(x)) push(p.id + '-' + (x.id || i), '[' + p.name + '] ◆ ' + x.t + ' 마감', x.due); }); });
@@ -1863,7 +1908,7 @@ async function importJson(file){
 }
 
 const A = {
-  go: d => go(d.r), mode: d => { V.mode = d.m; ls.set('wb.mode', V.mode); if (V.route === 'delegate' || V.route === 'project') { if (V.mode === 'personal') V.route = 'today'; } render(); },
+  go: d => go(d.r), mode: d => { V.mode = d.m; ls.set('wb.mode', V.mode); ls.set('wb.modeDay', TODAY()); if (V.route === 'delegate' || V.route === 'project') { if (V.mode === 'personal') V.route = 'today'; } render(); },
   nav: d => { shiftCur(+d.d); render(); },
   pickDate: () => { V.dp = V.dp ? null : { ym: V.cur.slice(0, 7), view: V.route === 'year' ? 'month' : 'day' }; renderTop(); },
   dpMove: d => { const y = +V.dp.ym.slice(0, 4), m = +V.dp.ym.slice(5, 7) - 1 + +d.d; const yy = y + Math.floor(m / 12), mm = ((m % 12) + 12) % 12 + 1; V.dp.ym = yy + '-' + pad(mm); renderTop(); },
@@ -1874,21 +1919,34 @@ const A = {
   edit: d => { const i = S.items[d.id]; if (i) openEdit(i); },
   toggleTask: async d => { const i = S.items[d.id]; if (!i) return; await undoable(i.done ? '미완료로 돌렸어요' : '완료 · ' + i.title, () => put('items', i.id, Object.assign({}, i, { done: !i.done, doneAt: !i.done ? Date.now() : null }))); },
   undo: () => doUndo(),
+  projTag: async d => { S.settings.projTag = !!d.v; await putSettings(); },
+  yKey: d => { V.yKey = !!d.v; ls.set('wb.yKey', V.yKey); render(); },
+  modeAuto: d => { ls.set('wb.modeAuto', !!d.v); render(); },
+  loadMenu: () => { const keep = M && M.f ? { text: M.f.text, tab: M.f.tab, date: M.f.date } : {}; openModal({ title: '불러오기', f: keep, body: () => `<span class="muted hint">자주 하는 일을 다시 쓰는 방법을 한곳에 모았어요.</span>
+    <b style="font-size:13px">할 일 템플릿 <span class="muted" style="font-weight:400">— 한 번 할 일 (체크리스트 포함)</span></b>
+    ${(ST().templates || []).length ? `<div class="fl">${ST().templates.map(tp => `<button class="opt" data-act="tplUse" data-id="${tp.id}">${h(tp.name)}</button>`).join('')}</div>` : '<span class="muted">아직 없어요. 할 일 수정 창에서 "템플릿으로 저장"을 누르면 생겨요.</span>'}
+    <b style="font-size:13px">프로젝트 · 행사 복사 <span class="muted" style="font-weight:400">— 여러 단계 묶음</span></b>
+    ${Object.values(S.projects).length ? `<div class="fl">${Object.values(S.projects).sort((a, b) => (b.star ? 1 : 0) - (a.star ? 1 : 0)).slice(0, 10).map(p => `<button class="opt" data-act="copyProject" data-id="${p.id}">${p.star ? '★ ' : ''}${h(p.name)}</button>`).join('')}</div>` : '<span class="muted">아직 없어요.</span>'}
+    <b style="font-size:13px">반복업무 <span class="muted" style="font-weight:400">— 매일·매주 자동으로 생기는 일</span></b>
+    <div class="fl"><button class="opt" data-act="editRoutine">+ 새 반복업무</button><button class="opt" data-act="go" data-r="routine">반복업무 목록</button></div>` }); },
+  interruptMenu: () => openModal({ title: '끼어든 일', body: () => `<span class="muted hint">계획에 없던 일은 모두 여기서 기록해요.</span>
+    ${[['interrupt', '방금 한 일 · 지금 하는 일', '전화, 대표님 회의, 비품, 청소처럼 잠깐 끼어든 일을 시간과 함께 기록 → 리소스의 "담당 외 지원"'], ['urgent', '앞으로 할 급한 일 (대표님 요청)', '소요 시간·기한을 넣으면 밀리는 업무와 안내문을 만들고 한 번에 조정'], ['newExtra', '근무시간 외 · 휴일 근무', '점심·퇴근 후·휴일에 한 일 기록 → 승인되면 유연근무·보상휴무로 전환']].map(([a, t, d]) => `<button class="item" style="border:1px solid var(--line);width:100%;text-align:left;align-items:flex-start;padding:12px" data-act="${a}"><span style="flex:1;display:flex;flex-direction:column;gap:3px"><b style="font-size:14px">${t}</b><span class="muted hint">${d}</span></span><span class="muted">›</span></button>`).join('')}` }),
+  toggleHelp: () => { ls.set('wb.help', !helpOn()); render(); if (M) renderModal(); toast(helpOn() ? '도움말을 켰어요' : '도움말을 숨겼어요 · H 키로 다시 켜요'); },
   postpone: d => openPostpone(d.id),
-  urgent: () => openUrgent(),
+  urgent: () => { closeModal(); openUrgent(); },
   urgentAdd: async d => { const sm = V.sim, pl = urgentPlan(), nd = nextWorkday(sm.due); closeModal();
     await undoable('급한 업무 추가' + (d.move ? ' · ' + pl.pushed.length + '건 ' + mdw(nd) + '로' : ''), async () => { await put('items', uid(), { kind: 'task', title: sm.name || '대표님 요청 업무', scope: 'work', date: sm.due, dur: +sm.h || 1, prio: true, done: false, checklist: [], memo: '대표님 요청 · ' + mdw(TODAY()), created: Date.now() }); if (d.move) for (const i of pl.pushed) await moveItem(i.id, nd, undefined, '대표님 급한 업무: ' + (sm.name || '')); }); },
   report: () => openReport(), rpMove: d => { M.f.ws = add(M.f.ws, +d.d); renderModal(); }, rpHours: () => { M.f.hours = !M.f.hours; renderModal(); },
   rpCopy: () => { const t = $('rp-txt').value; A.copy({ text: t }); },
-  tplSave: async () => { const f = M.f; if (!f.title) { toast('제목을 먼저 입력해 주세요.'); return; } const tp = { id: 't' + uid(), name: f.title.slice(0, 20), title: f.title, kind: f.kind, scope: f.scope || 'work', area: f.area || '', ch: f.ch || [], dur: f.dur || '', members: f.members || [], checklist: (f.checklist || []).map(c => c.t), memo: f.memo || '' }; S.settings.templates = (ST().templates || []).filter(x => x.name !== tp.name).concat([tp]); await putSettings(); toast('템플릿 "' + tp.name + '" 저장 · 빠른 입력에서 불러올 수 있어요'); },
-  tplUse: d => { const tp = (ST().templates || []).find(x => x.id === d.id); if (!tp) return; const p = parseQuick(M.f.text || '', M.f.tab); const date = p.date || M.f.date || TODAY(); closeModal(); openEdit({ _new: true, kind: tp.kind || 'task', title: tp.title, scope: tp.scope, area: tp.area, ch: tp.ch, dur: tp.dur, members: tp.members, memo: tp.memo, date, start: p.start || null, checklist: (tp.checklist || []).map(t => ({ t, d: false })), done: false, created: Date.now() }); },
+  tplSave: async () => { const f = M.f; if (!f.title) { toast('제목을 먼저 입력해 주세요.'); return; } const tp = { id: 't' + uid(), name: f.title.slice(0, 20), title: f.title, kind: f.kind, scope: f.scope || 'work', area: f.area || '', ch: f.ch || [], dur: f.dur || '', members: f.members || [], checklist: (f.checklist || []).map(c => c.t), memo: f.memo || '' }; S.settings.templates = (ST().templates || []).filter(x => x.name !== tp.name).concat([tp]); await putSettings(); toast('템플릿 "' + tp.name + '" 저장 · 입력 창에서 불러올 수 있어요'); },
+  tplUse: d => { const tp = (ST().templates || []).find(x => x.id === d.id); if (!tp) return; const p = parseQuick((M && M.f && M.f.text) || '', (M && M.f && M.f.tab) || 'task'); const date = p.date || (M && M.f && M.f.date) || TODAY(); closeModal(); openEdit({ _new: true, kind: tp.kind || 'task', title: tp.title, scope: tp.scope, area: tp.area, ch: tp.ch, dur: tp.dur, members: tp.members, memo: tp.memo, date, start: p.start || null, checklist: (tp.checklist || []).map(t => ({ t, d: false })), done: false, created: Date.now() }); },
   tplDel: async d => { S.settings.templates = (ST().templates || []).filter(x => x.id !== d.id); await putSettings(); },
   qSug: d => applySug(d.v), qRecent: d => { const el = $('q-text'); el.value = d.v; M.f.text = d.v; el.focus(); $('q-prev').innerHTML = M.preview(); $('q-sug').innerHTML = quickSug(el); },
   search: () => openSearch(), srFirst: () => { const b = document.querySelector('#sr-res [data-act]'); if (b) b.click(); },
   ppGo: async d => { const date = d.s || (M && M.f.d); if (!date) { toast('날짜를 골라 주세요.'); return; } const i = S.items[d.id]; closeModal(); await undoable('미뤘어요 · ' + mdw(date), () => moveItem(d.id, date, undefined, '미루기')); },
   overdueAll: async d => { const L = Object.values(S.items).filter(i => isOverdue(i) && vis(i.scope)); const to = d.s; await undoable('지연 ' + L.length + '건 → ' + mdw(to), async () => { for (const i of L) await moveItem(i.id, to, undefined, '지연 일괄 이동'); }); },
   toggleRoutine: async d => { const r = S.routines[d.id]; if (!r) return; const done = Object.assign({}, r.done || {}); if (done[d.s]) delete done[d.s]; else done[d.s] = true; const cut = add(TODAY(), -150); Object.keys(done).forEach(k => { if (k < cut) delete done[k]; }); await put('routines', r.id, Object.assign({}, r, { done })); },
-  editRoutine: d => openRoutine(d.id ? S.routines[d.id] : null),
+  editRoutine: d => { if (M && !M.live) closeModal(); openRoutine(d.id ? S.routines[d.id] : null); },
   addRec: async () => { for (const r of REC_ROUTINES) { const id = uid(); await put('routines', id, Object.assign({ scope: 'work', hol: 'next', anchor: TODAY(), days: [], from: TODAY(), done: {} }, r)); } toast('추천 반복업무를 추가했어요'); },
   fDeleg: d => { V.fDeleg = d.f; V.selDeleg = null; render(); }, selDeleg: d => { V.selDeleg = d.id; render(); if (innerWidth < 900) { const el = $('delegDetail'); if (el) el.scrollIntoView({ behavior: 'smooth' }); } },
   openDeleg: d => { V.selDeleg = d.id; V.fDeleg = 'open'; const x = S.delegs[d.id]; if (x && ['closed','stopped'].includes(x.status)) V.fDeleg = 'closed'; go('delegate'); },
@@ -1904,7 +1962,7 @@ const A = {
   fRoutine: d => { V.fRoutine = d.f; render(); },
   fProject: d => { V.fProject = d.f; V.selProject = null; render(); }, selProject: d => { V.selProject = d.id; render(); },
   openProject: d => { V.selProject = d.id; const p = S.projects[d.id]; V.fProject = p && ['done','stop'].includes(p.status) ? 'archive' : 'live'; go('project'); },
-  newProject: () => openProjectNew(null), copyProject: d => openProjectNew(d.id || ''),
+  newProject: () => { closeModal(); openProjectNew(null); }, copyProject: d => { closeModal(); openProjectNew(d.id || ''); },
   pstat: d => openPStat(d.id, d.s),
   presume: async d => { const p = S.projects[d.id]; const shift = p.status === 'hold' && p.statusAt ? Math.max(0, Math.round((P(TODAY()) - P(p.statusAt)) / 864e5)) : 0; const steps = (p.steps || []).map(x => { if (!shift || stepDone(x)) return x; const y = Object.assign({}, x); if (y.due) y.due = add(y.due, shift); y.subs = (y.subs || []).map(sb => (!sb.done && sb.due) ? Object.assign({}, sb, { due: add(sb.due, shift) }) : sb); return y; }); await put('projects', p.id, Object.assign({}, p, { status: 'active', steps, statusAt: TODAY(), statusMemo: shift ? '재개 · 남은 단계 ' + shift + '일 뒤로' : '재개' })); toast('다시 진행해요'); },
   pstep: async d => { editUnit(d.id, +d.i, +d.j, u => { if (+d.j < 0 && (u.subs || []).length) { const v = !stepDone(u); u.subs = u.subs.map(sb => Object.assign({}, sb, { done: v })); } else u.done = !u.done; }); },
@@ -1915,13 +1973,13 @@ const A = {
   psubAdd: async d => { const el = $('psub-' + d.id + '-' + d.i); const t = el && el.value.trim(); if (!t) return; editUnit(d.id, +d.i, -1, u => { const first = !(u.subs || []).length; u.subs = (u.subs || []).concat([{ t, due: null, who: first ? (u.who || '') : '', done: false, dur: first && u.dur != null ? u.dur : null }]); if (first) { u.who = ''; u.done = false; } }); setTimeout(() => { const e2 = $('psub-' + d.id + '-' + d.i); if (e2) e2.focus(); }, 30); },
   pdelete: d => openModal({ title: '프로젝트 삭제', body: () => `<span>"${h(S.projects[d.id].name)}"을 삭제할까요? 단계와 메모가 모두 지워져요. 기록을 남기려면 "완료"나 "중단"을 쓰세요.</span><div class="foot"><span class="grow"></span><button class="btn" data-act="close">취소</button><button class="btn danger" data-act="pdeleteOk" data-id="${d.id}">삭제</button></div>` }),
   pdeleteOk: async d => { V.selProject = null; closeModal(); await undoable('프로젝트를 삭제했어요', () => { PLOCK++; try { Object.values(S.items).filter(i => i.proj === d.id && !i.done).forEach(i => del('items', i.id)); } finally { PLOCK--; } return del('projects', d.id); }); },
-  editProjectMeta: d => { const p = S.projects[d.id]; const kl = p.keyLabel || '마감일'; const f = { name: p.name, type: p.type || '프로젝트', area: p.area || '', base: (isEvt(p) ? p.evS : p.keyDate) || '', evE: p.evE || '', keyLabel: KEYLABELS.includes(kl) ? kl : '마감일', keyLabelC: KEYLABELS.includes(kl) || kl === '행사일' ? '' : kl, showCal: p.showCal !== false, block: p.block !== false, shift: true, _old: (isEvt(p) ? p.evS : p.keyDate) || '' };
-    openModal({ title: '기본 정보 · 날짜', cls: 'wide', f, body: () => `<label class="f">이름<input class="in" id="pm-n" data-f="name" value="${h(f.name)}"></label><div class="fl">${['프로젝트','행사','추적'].map(t => opt(f.type === t, 'pmSet', `data-v="${t}"`, t)).join('')}</div><label class="f">대표 분류<select class="in" id="pm-a" data-f="area"><option value="">없음</option>${ST().areas.map(a => `<option value="${a.id}" ${a.id === f.area ? 'selected' : ''}>${h(a.n)}</option>`).join('')}</select></label>
+  editProjectMeta: d => { const p = S.projects[d.id]; const kl = p.keyLabel || '마감일'; const f = { name: p.name, abbr: p.abbr || '', type: p.type || '프로젝트', area: p.area || '', base: (isEvt(p) ? p.evS : p.keyDate) || '', evE: p.evE || '', keyLabel: KEYLABELS.includes(kl) ? kl : '마감일', keyLabelC: KEYLABELS.includes(kl) || kl === '행사일' ? '' : kl, showCal: p.showCal !== false, block: p.block === true, evStaff: p.evStaff || '', shift: true, _old: (isEvt(p) ? p.evS : p.keyDate) || '' };
+    openModal({ title: '기본 정보 · 날짜', cls: 'wide', f, body: () => `<div class="fgrid"><label class="f">이름<input class="in" id="pm-n" data-f="name" value="${h(f.name)}"></label><label class="f">캘린더 약칭 (비우면 자동)<input class="in" id="pm-ab" data-f="abbr" value="${h(f.abbr || '')}" maxlength="6" placeholder="${h(abbrOf({ name: f.name }))}"></label></div><div class="fl">${['프로젝트','행사','모니터링'].map(t => opt(typeLabel(f.type) === t, 'pmSet', `data-v="${t}"`, t)).join('')}</div><label class="f">대표 분류<select class="in" id="pm-a" data-f="area"><option value="">없음</option>${ST().areas.map(a => `<option value="${a.id}" ${a.id === f.area ? 'selected' : ''}>${h(a.n)}</option>`).join('')}</select></label>
     ${calFields(f)}
     ${f._old && f.base && f._old !== f.base ? `<div class="fl">${opt(f.shift, 'cfT2', '', '남은 단계 기한도 ' + Math.round((P(f.base) - P(f._old)) / 864e5) + '일 같이 옮기기')}</div>` : ''}
     <div class="foot"><span class="grow"></span><button class="btn pri" data-act="pmSave" data-id="${p.id}">저장</button></div>` }); },
-  cfT2: () => { M.f.shift = !M.f.shift; renderModal(); },
-  pmSet: d => { M.f.type = d.v; renderModal(); }, pmSave: async d => { const p = S.projects[d.id], f = M.f; const o = Object.assign({}, p, { name: f.name, type: f.type, area: f.area }, calData(f));
+  cfT2: () => { M.f.shift = !M.f.shift; renderModal(); }, cfT2b: () => { M.f.block = M.f.block === true ? false : true; renderModal(); },
+  pmSet: d => { M.f.type = d.v; renderModal(); }, pmSave: async d => { const p = S.projects[d.id], f = M.f; const o = Object.assign({}, p, { name: f.name, abbr: (f.abbr || '').trim(), type: f.type, area: f.area }, calData(f));
     if (f.shift && f._old && f.base && f._old !== f.base) { const sh = Math.round((P(f.base) - P(f._old)) / 864e5); o.steps = (p.steps || []).map(x => { if (stepDone(x)) return x; const wd = x => { let k = add(x, sh); for (let i = 0; i < 10 && isOff(k); i++) k = add(k, -1); return k; }; const y = Object.assign({}, x); if (y.due) y.due = wd(y.due); y.subs = (y.subs || []).map(sb => (!sb.done && sb.due) ? Object.assign({}, sb, { due: wd(sb.due) }) : sb); return y; }); }
     closeModal(); await undoable('저장했어요', () => put('projects', p.id, o)); },
   resPer: d => { V.resPer = d.p; render(); },
@@ -1945,11 +2003,11 @@ const A = {
   backupLater: () => { ls.set('wb.backupSnooze', add(TODAY(), 7)); render(); },
   exportJson: () => { S.settings.lastBackup = TODAY(); putSettings(); A._exportJson(); },
   _exportJson: () => downloadFile('워크보드-백업-' + TODAY() + '.json', JSON.stringify({ settings: S.settings, items: S.items, routines: S.routines, delegs: S.delegs, projects: S.projects, flex: S.flex }, null, 1)),
-  interrupt: () => openInterrupt(), endday: () => openEndDay(),
+  interrupt: () => { closeModal(); openInterrupt(); }, endday: () => openEndDay(),
   stopRun: async () => { const r = V.running; if (!r) return; const e = nowH(), s = hm(r.start); await put('items', uid(), { kind: 'task', title: r.title, scope: 'work', area: r.area, date: r.date, start: r.start, dur: r2(Math.max(0.1, e - s)), done: true, doneAt: Date.now(), checklist: [], created: Date.now() }); V.running = null; ls.set('wb.running', null); toast('기록했어요 · ' + fh(Math.max(0.1, e - s))); render(); },
   cancelRun: () => { V.running = null; ls.set('wb.running', null); render(); },
   /* 모달 내부 */
-  qTab: d => { M.f.tab = d.t; renderModal(); }, qScope: d => { M.f.scope = d.s; renderModal(); }, qSave: () => quickSave(false), qDetail: () => quickSave(true),
+  qTab: d => { M.f.tab = d.t; M.f.tabSet = true; renderModal(); }, qScope: d => { M.f.scope = d.s; renderModal(); }, qSave: () => quickSave(false), qDetail: () => quickSave(true),
   eSet: d => { if (d.k === 'kind' || d.k === 'scope' || d.k === 'date') M.f[d.k] = d.v; else M.f[d.k] = !!d.v; if (d.k === 'scope') M.f.area = ''; renderModal(); },
   eCh: d => { const c = new Set(M.f.ch || []); c.has(d.c) ? c.delete(d.c) : c.add(d.c); M.f.ch = [...c]; renderModal(); },
   eQuick: d => { const f = M.f; const base = f.date || TODAY(); if (d.k === 'h1') { const s = f.start ? hm(f.start) + 1 : nowH() + 1; f.start = toHM(Math.min(23.5, s)); } if (d.k === 'd1') f.date = add(base, 1); if (d.k === 'w3') f.date = addWorkdays(base, 3); if (d.k === 'nm') { f.date = add(weekStart(base), 7); if (isOff(f.date)) f.date = nextWorkday(f.date); } renderModal(); },
@@ -1986,7 +2044,7 @@ const A = {
     if (f.mode === 'copy') { const src = S.projects[f.src]; if (!src) return; const dates = (src.steps || []).filter(x => x.due).map(x => x.due).sort(); const anchor = dates[dates.length - 1]; const mv = dd => dd && anchor ? snapWd(add(npAnchor(f), Math.round((P(dd) - P(anchor)) / 864e5))) : null; steps = (src.steps || []).map(x => ({ t: x.t, due: mv(x.due), done: false, who: x.who || '', dur: x.dur || null, area: x.area || '', subs: (x.subs || []).map(sb => ({ t: sb.t, due: mv(sb.due), done: false, who: sb.who || '', dur: sb.dur != null ? sb.dur : null })) })); }
     else steps = f.steps.map((x, i) => ({ t: x.t, due: snapWd(add(npAnchor(f), -(f.steps.length - 1 - i) * (+f.gap || 5))), done: false, who: '' }));
     const src = f.mode === 'copy' ? S.projects[f.src] : null;
-    await put('projects', id, Object.assign({ name: f.name.trim() || '새 ' + f.type, type: f.type, area: f.area || (src && src.area) || '', status: 'active', steps, memo: src ? src.memo || '' : '', created: Date.now(), showCal: f.showCal !== false }, calData(f)));
+    await put('projects', id, Object.assign({ name: f.name.trim() || '새 ' + f.type, type: f.type, area: f.area || (src && src.area) || '', status: 'active', steps, memo: src ? src.memo || '' : '', created: Date.now(), showCal: f.showCal !== false, abbr: (f.abbr || '').trim() }, calData(f)));
     V.selProject = id; V.fProject = 'live'; closeModal(); if (V.route !== 'project') go('project'); toast('만들었어요'); },
   psSet: d => { M.f[d.k] = d.k === 'star' ? !!d.v : d.v; renderModal(); },
   psSave: async () => { const f = M.f, p = S.projects[f.id]; let steps = p.steps || [];
@@ -2069,6 +2127,8 @@ document.addEventListener('keydown', e => {
   else if (k === 't') { V.cur = TODAY(); render(); }
   else if (k === 'g' && ['today','week','month','year','resource'].includes(V.route)) { e.preventDefault(); A.pickDate(); }
   else if (k === '/') { e.preventDefault(); openSearch(); }
+  else if (k === 'h' || e.key === '?') { e.preventDefault(); A.toggleHelp(); }
+  else if (k === 'i') { e.preventDefault(); A.interruptMenu(); }
   else if (k === 'r' && V.mode !== 'personal') { e.preventDefault(); openReport(); }
   else if (k === 'u' && V.mode !== 'personal') { e.preventDefault(); openUrgent(); }
   else if (k === 'arrowleft') { shiftCur(-1); render(); } else if (k === 'arrowright') { shiftCur(1); render(); }
