@@ -64,6 +64,10 @@ button{cursor:pointer}
 .top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .top h1{margin:0;font-size:20px;font-weight:700;letter-spacing:-.3px;white-space:nowrap}
 .dpw{position:relative}
+.dh{cursor:grab;color:var(--fg4);font-size:13px;letter-spacing:-2px;padding:2px 4px;user-select:none}.dh:hover{color:var(--acc)}
+.mvb{display:none}
+@media (pointer:coarse){.dh{display:none}.mvb{display:inline-flex;font-size:10px}}
+.step.dropon{outline:2px dashed var(--acc);outline-offset:-2px;border-radius:8px}
 .lrow{display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:8px 10px;min-width:0}
 .lmain{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;text-align:left;border:0;background:transparent;padding:0;cursor:pointer}
 .lmain .ell{max-width:100%}
@@ -414,7 +418,7 @@ const REC_ROUTINES = [
  {title:'광고 계정·결제수단 점검',area:'ad',ch:[],freq:'mfirst',time:null,dur:0.5}
 ];
 
-const APP_VER = '2026.10.01-10';
+const APP_VER = '2026.10.01-13';
 /* ========== 상태 ========== */
 function startMode(){ // 앱을 열 때: 오늘 직접 바꾼 적이 있으면 그 모드, 아니면 근무시간=업무 · 그 외=개인
   const pref = ls.get('wb.modeAuto', true), last = ls.get('wb.mode', 'all');
@@ -661,7 +665,7 @@ const PTPL = {
 const isPers = p => p && p.scope === 'personal';
 const isEvt = p => p.type === '행사' || p.type === '여행';
 function abbrOf(p){ if (!p) return ''; if (p.abbr != null && p.abbr !== '') return p.abbr; const w = (p.name || '').replace(/\(복사\)/g, '').trim().split(/\s+/)[0] || ''; return w.slice(0, 5); }
-const ptag = i => i && i.proj && S.projects[i.proj] && ST().projTag !== false ? abbrOf(S.projects[i.proj]) : '';
+const ptag = i => { const pid = i && (i.proj || i.evProj); return pid && S.projects[pid] && ST().projTag !== false ? abbrOf(S.projects[pid]) : ''; };
 const calTitle = i => { const t = ptag(i); return (t ? t + '·' : '') + i.title; }; // 캘린더용 제목: 프로젝트 약칭·할 일
 const typeLabel = t => t === '추적' ? '모니터링' : (t || '프로젝트');
 function evRange(p){ if (!p.evS) return null; return [p.evS, p.evE && p.evE >= p.evS ? p.evE : p.evS]; }
@@ -683,7 +687,7 @@ function calFields(f){ // 새로 만들기 · 수정 창 공통: 대표 날짜 /
   const pers = f.scope === 'personal', evt = f.type === '행사' || f.type === '여행', trip = f.type === '여행';
   if (evt) return `<div class="card" style="background:var(--surface2);border:0;gap:8px">
     <div class="fgrid"><label class="f">${trip ? '출발일' : '행사 시작일'}<input class="in" type="date" id="cf-s" data-f="base" value="${h(f.base || '')}"></label><label class="f">${trip ? '돌아오는 날' : '행사 종료일'}<input class="in" type="date" id="cf-e" data-f="evE" value="${h(f.evE || f.base || '')}"></label></div>
-    ${trip ? `<label class="f">여행지<input class="in" id="cf-v" data-f="venue" value="${h(f.venue || '')}" placeholder="예: 오사카"></label>` : `<div class="fgrid"><label class="f">행사장<input class="in" id="cf-v" data-f="venue" value="${h(f.venue || '')}" placeholder="예: 코엑스 B홀 · 부스 C-12"></label><label class="f">참석 인원<input class="in" id="cf-n" data-f="attend" value="${h(f.attend || '')}" placeholder="예: 우리 3명 · 예상 방문 200명"></label></div>`}
+    ${trip ? `<label class="f">여행지<input class="in" id="cf-v" data-f="venue" value="${h(f.venue || '')}" placeholder="예: 오사카"></label>` : `<div class="fgrid"><label class="f">행사장<input class="in" id="cf-v" data-f="venue" value="${h(f.venue || '')}" placeholder="예: 코엑스 B홀 · 부스 C-12"></label><label class="f">규모 · 예상 방문 (선택)<input class="in" id="cf-n" data-f="attend" value="${h(f.attend || '')}" placeholder="예: 부스 2개 · 예상 방문 200명"></label></div>`}
     <div class="fl">${opt(f.showCal !== false, 'cfT', 'data-k="showCal"', (pers ? '개인' : '업무') + ' 캘린더에 표시')}${!pers ? opt(f.block === true, 'cfT2b', '', '내 근무로 포함 (그 기간 다른 업무 배정 막기)') : ''}</div></div>`;
   const labels = pers ? [PKEY[f.type] || '마감일'] : KEYLABELS;
   return `<div class="card" style="background:var(--surface2);border:0;gap:8px">
@@ -913,9 +917,9 @@ const LIB = {
   tool: { name: '도구', one: '도구', fields: [{ k: 'title', l: '도구 이름', req: 1 }, { k: 'cat', l: '종류', t: 'select', o: ['AI', '광고 분석', '랜딩 · 삽입', '데이터 정리', '디자인', '협업', '기타'] }, { k: 'owner', l: '구분', t: 'select', o: ['업무', '부업'] }, { k: 'url', l: '주소', t: 'url' }, { k: 'plan', l: '요금제' }, { k: 'cost', l: '월 비용', t: 'money' }, { k: 'use', l: '어디에 쓰나' }, { k: 'rating', l: '만족도', t: 'rate' }, { k: 'memo', l: '메모 · 사용 팁', t: 'textarea' }],
     group: x => x.cat || '기타',
     row: x => ({ t: x.title, sub: [x.use, x.plan, x.cost ? '월 ' + won(x.cost) : '무료'].filter(Boolean).join(' · '), chips: [x.rating ? ['c-g', '★' + x.rating] : null], url: x.url }) },
-  lead: { name: 'DB 접수', one: 'DB', fields: [{ k: 'date', l: '접수일', t: 'date', req: 1 }, { k: 'media', l: '매체', t: 'select', o: ADMEDIA }, { k: 'camp', l: '캠페인' }, { k: 'name', l: '고객 (이니셜 권장)', ph: '김OO' }, { k: 'ph4', l: '연락처 뒷 4자리', ph: '1234' }, { k: 'wed', l: '예식일', t: 'date' }, { k: 'dest', l: '여행지' }, { k: 'status', l: '상태', t: 'select', o: LEAD_ST }, { k: 'reason', l: '종료 사유', t: 'select', o: LEAD_END, show: f => f.status === '종료' }, { k: 'margin', l: '마진', t: 'money', show: f => f.status === '정계약' }, { k: 'memo', l: '메모', t: 'textarea' }],
+  lead: { name: 'DB 접수', one: 'DB', fields: [{ k: 'date', l: '접수일', t: 'date', req: 1 }, { k: 'media', l: '매체', t: 'select', o: ADMEDIA }, { k: 'camp', l: '캠페인' }, { k: 'proj', l: '연결 행사 · 프로젝트', t: 'select', o: () => [['', '연결 안 함']].concat(Object.values(S.projects).filter(p => !isPers(p) && (p.status || 'active') !== 'stop').map(p => [p.id, p.name])) }, { k: 'name', l: '고객 (이니셜 권장)', ph: '김OO' }, { k: 'ph4', l: '연락처 뒷 4자리', ph: '1234' }, { k: 'wed', l: '예식일', t: 'date' }, { k: 'dest', l: '여행지' }, { k: 'status', l: '상태', t: 'select', o: LEAD_ST }, { k: 'reason', l: '종료 사유', t: 'select', o: LEAD_END, show: f => f.status === '종료' }, { k: 'margin', l: '마진', t: 'money', show: f => f.status === '정계약' }, { k: 'memo', l: '메모', t: 'textarea' }],
     sort: (a, b) => b.date > a.date ? 1 : -1,
-    row: x => ({ t: (x.name || '고객') + (x.ph4 ? ' (' + x.ph4 + ')' : '') + (x.dest ? ' · ' + x.dest : ''), sub: [mdw(x.date), x.media, x.camp, x.wed ? '예식 ' + md(x.wed) : '', x.status === '정계약' && x.margin ? '마진 ' + won(x.margin) : '', x.status === '종료' && x.reason ? x.reason : ''].filter(Boolean).join(' · '), chips: [[x.status === '정계약' ? 'c-w' : x.status === '종료' ? 'c-g' : x.status === '신규' || !x.status ? 'c-warn' : 'c-p', x.status || '신규']] }) },
+    row: x => ({ t: (x.name || '고객') + (x.ph4 ? ' (' + x.ph4 + ')' : '') + (x.dest ? ' · ' + x.dest : ''), sub: [mdw(x.date), x.media, x.camp, x.proj && S.projects[x.proj] ? '▸ ' + abbrOf(S.projects[x.proj]) : '', x.wed ? '예식 ' + md(x.wed) : '', x.status === '정계약' && x.margin ? '마진 ' + won(x.margin) : '', x.status === '종료' && x.reason ? x.reason : ''].filter(Boolean).join(' · '), chips: [[x.status === '정계약' ? 'c-w' : x.status === '종료' ? 'c-g' : x.status === '신규' || !x.status ? 'c-warn' : 'c-p', x.status || '신규']] }) },
   adspend: { name: '광고비', one: '광고비', fields: [{ k: 'month', l: '월', t: 'month', req: 1 }, { k: 'media', l: '매체', t: 'select', o: ADMEDIA }, { k: 'camp', l: '캠페인' }, { k: 'amount', l: '광고비', t: 'money', req: 1 }, { k: 'imp', l: '노출', t: 'number' }, { k: 'click', l: '클릭', t: 'number' }, { k: 'memo', l: '메모' }],
     sort: (a, b) => b.month > a.month ? 1 : -1,
     row: x => ({ t: (x.media || '') + (x.camp ? ' · ' + x.camp : '') + ' ' + won(x.amount), sub: [x.month, x.imp ? '노출 ' + nm(x.imp) : '', x.click ? '클릭 ' + nm(x.click) : '', x.imp && x.click ? 'CTR ' + (x.click / x.imp * 100).toFixed(2) + '%' : ''].filter(Boolean).join(' · '), chips: [] }) }
@@ -1064,7 +1068,7 @@ function adsSummary(){
 /* 기록 입력 창 */
 function openLib(lib, src){
   const L = LIB[lib], f = JSON.parse(JSON.stringify(src || {})); f.lib = lib;
-  L.fields.forEach(x => { if (f[x.k] === undefined) { if (x.t === 'select') f[x.k] = (typeof x.o === 'function' ? x.o() : x.o)[0]; else if (x.t === 'lines' || x.t === 'buys') f[x.k] = []; else if (x.k === 'date' && x.req) f.date = V.route === 'today' ? V.cur : TODAY(); else if (x.t === 'month') f[x.k] = TODAY().slice(0, 7); } });
+  L.fields.forEach(x => { if (f[x.k] === undefined) { if (x.t === 'select') { const o0 = (typeof x.o === 'function' ? x.o() : x.o)[0]; f[x.k] = Array.isArray(o0) ? o0[0] : o0; } else if (x.t === 'lines' || x.t === 'buys') f[x.k] = []; else if (x.k === 'date' && x.req) f.date = V.route === 'today' ? V.cur : TODAY(); else if (x.t === 'month') f[x.k] = TODAY().slice(0, 7); } });
   const hub = HUBS[V.hub]; if (hub && hub.owner && (lib === 'channel' || lib === 'tool') && !src) f.owner = hub.owner;
   openModal({ title: (src && src.id ? '' : '새 ') + L.one, cls: 'wide', lib, f, focus: 'lf-' + L.fields.find(x => x.req || x.t !== 'select').k, body(){
     return `<div class="fgrid">${L.fields.filter(x => !x.show || x.show(f)).map(x => libField(x, f)).join('')}</div>
@@ -1074,7 +1078,7 @@ function libField(x, f){
   const id = 'lf-' + x.k, v = f[x.k], wide = ['textarea', 'lines', 'buys'].includes(x.t) ? ' style="grid-column:1/-1"' : '';
   const lbl = `<span>${h(x.l)}${x.req ? ' *' : ''}</span>`;
   if (x.t === 'textarea') return `<label class="f"${wide}>${lbl}<textarea class="in" id="${id}" data-f="${x.k}" rows="${x.k === 'text' || x.k === 'body' ? 6 : 3}" placeholder="${h(x.ph || '')}">${h(v || '')}</textarea></label>`;
-  if (x.t === 'select') { const o = typeof x.o === 'function' ? x.o() : x.o; return `<label class="f">${lbl}<select class="in" id="${id}" data-f="${x.k}">${o.map(z => `<option ${z === v ? 'selected' : ''}>${h(z)}</option>`).join('')}</select></label>`; }
+  if (x.t === 'select') { const o = typeof x.o === 'function' ? x.o() : x.o; return `<label class="f">${lbl}<select class="in" id="${id}" data-f="${x.k}">${o.map(z => Array.isArray(z) ? `<option value="${h(z[0])}" ${z[0] === (v || '') ? 'selected' : ''}>${h(z[1])}</option>` : `<option ${z === v ? 'selected' : ''}>${h(z)}</option>`).join('')}</select></label>`; }
   if (x.t === 'rate') return `<label class="f">${lbl}<select class="in" id="${id}" data-f="${x.k}">${RATE.map(([k, l]) => `<option value="${k}" ${String(v || '') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`;
   if (x.t === 'date' || x.t === 'month') return `<label class="f">${lbl}<input class="in" type="${x.t}" id="${id}" data-f="${x.k}" value="${h(v || '')}"></label>`;
   if (x.t === 'time') return `<label class="f">${lbl}${tsel(id, v, `data-tf="${x.k}"`, 10, true)}</label>`;
@@ -1579,7 +1583,7 @@ function vProject(){
   const prog = p => { const u = units(p); return [u.filter(x => x.done).length, u.length]; };
   return `<div class="fl">${F.map(f => `<button class="pill ${V.fProject === f[0] ? 'on' : ''}" data-act="fProject" data-f="${f[0]}">${f[1]} ${all.filter(f[2]).length}</button>`).join('')}<span class="grow"></span><button class="btn" data-act="copyProject" ${all.length ? '' : 'disabled'}>기존 것 복사</button><button class="btn pri" data-act="newProject">+ ${V.mode === 'personal' ? '새 목표 · 프로젝트' : '새 행사 · 프로젝트'}</button></div>
   <div class="two" style="grid-template-columns:minmax(0,320px) minmax(0,1fr)"><div class="col" style="gap:10px">
-  ${list.length ? list.map(p => { const [d, n] = prog(p); const nx = units(p).filter(x => !x.done && x.due).sort((a, b) => a.due < b.due ? -1 : 1)[0]; return `<button class="card" style="cursor:pointer;text-align:left;${sel && sel.id === p.id ? 'border:1.5px solid var(--acc)' : ''}" data-act="selProject" data-id="${p.id}"><span class="row"><span class="muted">${h(typeLabel(p.type))}${p.star ? ' · ★' : ''}</span><span class="grow"></span>${(() => { const st = p.status || 'active', pd = projDate(p); if (st !== 'active') return `<span class="chip ${PS[st][1]}">${PS[st][0]}</span>`; if (!pd) return ''; const n = Math.round((P(pd) - P(TODAY())) / 864e5); return `<span class="chip ${n < 0 ? 'c-g' : n <= 7 ? 'c-warn' : 'c-w'}" title="${h(projDateTxt(p))}">${n === 0 ? 'D-DAY' : n > 0 ? 'D-' + n : '지남'}</span>`; })()}</span><b style="font-size:14px">${h(p.name)}</b><span class="muted">${h(projDateTxt(p))}</span><span class="row" style="gap:8px"><span class="mini"><i style="width:${n ? d / n * 100 : 0}%;background:var(--acc)"></i></span><span class="muted">${d} / ${n}</span></span>${goalBar(p, true)}</button>`; }).join('') : `<div class="card"><span class="muted">아직 없어요. 오른쪽 위 버튼으로 시작하세요.</span></div>`}
+  ${list.length ? list.map(p => { const [d, n] = prog(p); const nx = units(p).filter(x => !x.done && x.due).sort((a, b) => a.due < b.due ? -1 : 1)[0]; return `<button class="card" style="cursor:pointer;text-align:left;${sel && sel.id === p.id ? 'border:1.5px solid var(--acc)' : ''}" data-act="selProject" data-id="${p.id}"><span class="row"><span class="muted">${h(typeLabel(p.type))}${p.star ? ' · ★' : ''}</span><span class="grow"></span>${(() => { const st = p.status || 'active', pd = projDate(p); if (st !== 'active') return `<span class="chip ${PS[st][1]}">${PS[st][0]}</span>`; if (!pd) return ''; const n = Math.round((P(pd) - P(TODAY())) / 864e5); return `<span class="chip ${n < 0 ? 'c-g' : n <= 7 ? 'c-warn' : 'c-w'}" title="${h(projDateTxt(p))}">${n === 0 ? 'D-DAY' : n > 0 ? 'D-' + n : '지남'}</span>`; })()}</span><b style="font-size:14px">${h(p.name)}</b><span class="muted">${h(projDateTxt(p))}${(p.members || []).length ? ' · 함께 ' + h(p.members.slice(0, 2).join(', ')) + (p.members.length > 2 ? ' 외 ' + (p.members.length - 2) : '') : ''}</span><span class="row" style="gap:8px"><span class="mini"><i style="width:${n ? d / n * 100 : 0}%;background:var(--acc)"></i></span><span class="muted">${d} / ${n}</span></span>${goalBar(p, true)}</button>`; }).join('') : `<div class="card"><span class="muted">아직 없어요. 오른쪽 위 버튼으로 시작하세요.</span></div>`}
   </div><div>${sel ? projectDetail(sel) : ''}</div></div>`;
 }
 function ddChip(d, done){ if (!d || done) return '<span class="ddc"></span>'; const n = Math.round((P(d) - P(TODAY())) / 864e5); return `<span class="ddc chip ${n < 0 ? 'c-bad' : n <= 3 ? 'c-warn' : 'c-g'}">${n === 0 ? '오늘' : n > 0 ? 'D-' + n : n + '일'}</span>`; }
@@ -1589,6 +1593,53 @@ function linksBox(p){
   return `<div class="col" style="gap:6px"><div class="ch"><b style="font-size:13px">자료 · 링크</b><span class="muted hint">소재 이미지·랜딩페이지·드라이브 폴더 주소를 붙여 두고 회의 때 바로 열어요</span></div>
     ${L.length ? `<div class="lgrid">${L.map((l, i) => `<div class="lcard">${img(l.url) ? `<a href="${h(l.url)}" target="_blank" rel="noopener"><img src="${h(l.url)}" alt="${h(l.t || '')}" loading="lazy"></a>` : ''}<div class="row" style="gap:6px"><a class="grow ell" href="${h(l.url)}" target="_blank" rel="noopener" style="font-size:13px;font-weight:600;color:var(--acc-fg)">${h(l.t || l.url.replace(/^https?:\/\//, '').slice(0, 40))}</a><button class="xb" data-act="lnkDel" data-id="${p.id}" data-i="${i}" aria-label="삭제">×</button></div></div>`).join('')}</div>` : ''}
     <div class="row" style="gap:6px"><input class="in" id="lk-u-${p.id}" placeholder="https://… 주소 붙여넣기" style="flex:2" data-enter="lnkAdd" data-id="${p.id}"><input class="in" id="lk-t-${p.id}" placeholder="이름 (선택)" style="flex:1" data-enter="lnkAdd" data-id="${p.id}"><button class="btn" data-act="lnkAdd" data-id="${p.id}">추가</button></div></div>`;
+}
+function projMoney(p){ // 예산 · 비용
+  const C = p.costs || [], sum = C.reduce((a, c) => a + (+c.amt || 0), 0), b = +p.budget || 0;
+  if (!b && !C.length && !V['moneyOpen' + p.id]) return `<button class="lnk" style="align-self:flex-start" data-act="pmOpen" data-id="${p.id}">+ 예산 · 비용 기록</button>`;
+  return `<div class="card" style="background:var(--surface2);border:0;gap:8px"><div class="ch"><b style="font-size:13px">예산 · 비용</b><span class="grow"></span><span class="muted">${b ? '예산 ' + won(b) + ' · ' : ''}사용 ${won(sum)}${b ? ' · ' + (sum > b ? '<b style="color:var(--bad)">' + won(sum - b) + ' 초과</b>' : '남음 ' + won(b - sum)) : ''}</span></div>
+    ${b ? `<span class="mini"><i style="width:${Math.min(100, sum / b * 100)}%;background:${sum > b ? 'var(--bad)' : 'var(--acc)'}"></i></span>` : ''}
+    ${C.map((c, i) => `<div class="row" style="font-size:13px;gap:8px"><span class="muted" style="width:44px">${c.d ? md(c.d) : ''}</span><span class="grow ell">${h(c.t)}</span><b>${won(c.amt)}</b><button class="xb" data-act="pcDel" data-id="${p.id}" data-i="${i}" aria-label="삭제">×</button></div>`).join('')}
+    <div class="row" style="gap:6px"><input class="in" id="pc-t-${p.id}" placeholder="항목 (대관료, 인쇄비…)" style="flex:2" data-enter="pcAdd" data-id="${p.id}"><input class="in" type="number" inputmode="numeric" id="pc-a-${p.id}" placeholder="금액" style="flex:1;min-width:90px" data-enter="pcAdd" data-id="${p.id}"><button class="btn" data-act="pcAdd" data-id="${p.id}">추가</button></div></div>`;
+}
+function autoKpi(p){ const L = Object.values(S.notes || {}).filter(x => x.lib === 'lead' && x.proj === p.id); const ct = L.filter(x => x.status === '정계약'); return { n: L.length, db: L.length, ct: ct.length, mg: ct.reduce((a, x) => a + (+x.margin || 0), 0) }; }
+const kpiAuto = (k, a) => /DB/i.test(k.n) ? a.db : /계약/.test(k.n) ? a.ct : null;
+function projTT(p){ // 행사 · 여행 당일 타임테이블 → 일정으로 등록
+  if (!isEvt(p)) return '';
+  const L = Object.values(S.items).filter(x => x.evProj === p.id).sort((a, b) => (a.date + (a.start || '')) < (b.date + (b.start || '')) ? -1 : 1);
+  return `<div class="card" style="background:var(--surface2);border:0;gap:6px"><div class="ch"><b style="font-size:13px">${p.type === '여행' ? '여행 일정표' : '당일 타임테이블'}</b><span class="muted hint">캘린더에 일정으로 들어가요</span></div>
+    ${L.map(x => `<div class="row" style="font-size:13px;gap:8px"><span style="width:110px" class="muted">${mdw(x.date)} ${x.start || ''}${x.end ? '–' + x.end : ''}</span><span class="grow ell" data-act="edit" data-id="${x.id}" style="cursor:pointer">${h(x.title)}</span><button class="xb" data-act="ttDel" data-id="${x.id}" aria-label="삭제">×</button></div>`).join('')}
+    <div class="row" style="gap:6px"><input class="in" id="tt-${p.id}" placeholder="예: 토 08:00-10:00 부스 설치 · 일 17-19시 철수 (날짜 없으면 첫날)" data-enter="ttAdd" data-id="${p.id}"><button class="btn" data-act="ttAdd" data-id="${p.id}">추가</button></div></div>`;
+}
+function projReport(p){
+  const u = units(p), d = u.filter(x => x.done).length, pd = projDate(p), T0 = TODAY();
+  const late = u.filter(x => !x.done && x.due && x.due < T0), nx = u.filter(x => !x.done).sort((a, b) => (a.due || 'z') < (b.due || 'z') ? -1 : 1).slice(0, 3);
+  const C = p.costs || [], sum = C.reduce((a, c) => a + (+c.amt || 0), 0), au = isPers(p) ? { n: 0 } : autoKpi(p);
+  const L = [];
+  L.push('[' + typeLabel(p.type) + '] ' + p.name + (pd ? ' · ' + projDateTxt(p) + ' (' + ddTxt(ddays(pd)) + ')' : ''));
+  if (p.venue) L.push('장소: ' + p.venue); if ((p.members || []).length) L.push('함께: ' + p.members.join(', '));
+  L.push('진행: ' + d + '/' + u.length + ' 완료 (' + (u.length ? Math.round(d / u.length * 100) : 0) + '%)' + (late.length ? ' · 지연 ' + late.length + '건' : ''));
+  if (late.length) L.push(late.map(x => '  - 지연: ' + x.t + ' (' + md(x.due) + ')').join('\n'));
+  if (nx.length) { L.push('다음 할 일:'); nx.forEach(x => L.push('  - ' + x.t + (x.due ? ' (' + md(x.due) + ')' : '') + (x.who ? ' · ' + staffName(x.who) : ''))); }
+  if (p.budget || C.length) L.push('예산: ' + (p.budget ? won(p.budget) + ' 중 ' : '') + won(sum) + ' 사용' + (p.budget && sum > p.budget ? ' (' + won(sum - p.budget) + ' 초과)' : ''));
+  const K = (p.kpis || []).filter(k => k.goal || k.act || (au.n && kpiAuto(k, au) != null)); if (K.length) L.push('성과: ' + K.map(k => { const av = au.n ? kpiAuto(k, au) : null, act = (k.act == null || k.act === 0) && av != null ? av : k.act; return k.n + ' ' + (act ?? 0) + (k.goal ? '/' + k.goal : ''); }).join(' · ') + (au.mg ? ' · 마진 ' + won(au.mg) : ''));
+  const lg = (p.log || []).slice(-3); if (lg.length) { L.push('최근 결정:'); lg.forEach(x => L.push('  - ' + md(x.d) + ' ' + x.t)); }
+  return L.join('\n');
+}
+function projLog(p){
+  const L = (p.log || []).slice().reverse();
+  return `<div class="col" style="gap:6px"><div class="ch"><b style="font-size:13px">회의 · 결정 기록</b><span class="muted hint">무엇을 왜 정했는지 한 줄씩</span></div>
+    ${L.map(x => `<div class="row" style="font-size:13px;gap:8px;padding:4px 0;border-bottom:1px solid var(--line2)"><span class="muted" style="width:44px">${md(x.d)}</span><span class="grow" style="white-space:pre-wrap">${h(x.t)}</span><button class="xb" data-act="plDel" data-id="${p.id}" data-k="${x.k}" aria-label="삭제">×</button></div>`).join('')}
+    <div class="row" style="gap:6px"><input class="in" id="pl-${p.id}" placeholder="예: 부스 위치 C-12로 확정 (대표님 회의)" data-enter="plAdd" data-id="${p.id}"><button class="btn" data-act="plAdd" data-id="${p.id}">기록</button></div></div>`;
+}
+function projKpi(p){ // 성과 지표 (목표 vs 실제)
+  if (isPers(p) && p.type === '목표') return '';
+  const K = p.kpis || [], au = isPers(p) ? { n: 0 } : autoKpi(p);
+  if (!K.length && !au.n && !V['kpiOpen' + p.id]) return `<button class="lnk" style="align-self:flex-start" data-act="pkOpen" data-id="${p.id}">+ 성과 지표 (목표 vs 실제)</button>`;
+  return `<div class="card" style="background:var(--surface2);border:0;gap:8px"><div class="ch"><b style="font-size:13px">성과 지표</b><span class="muted hint">목표를 정해 두고 끝나면 실제 값을 넣어요</span></div>
+    ${au.n ? `<div class="warnbox ok" style="font-size:12px">광고 관리 연결 DB ${au.db}건 · 정계약 ${au.ct}건 · 마진 ${won(au.mg)} <button class="lnk" data-act="goHub" data-h="ads">DB 보기 →</button></div>` : (isPers(p) ? '' : `<span class="muted hint">광고 관리의 DB 접수에서 "연결 행사 · 프로젝트"로 이 프로젝트를 고르면 DB·계약 수가 자동으로 들어와요.</span>`)}
+    ${K.map((k, i) => { const av = au.n ? kpiAuto(k, au) : null, act = (k.act == null || k.act === 0) && av != null ? av : k.act; return `<div class="row" style="font-size:13px;gap:8px;flex-wrap:wrap"><b style="width:90px" class="ell">${h(k.n)}</b><label class="row" style="gap:4px"><span class="muted">목표</span><input class="in" type="number" inputmode="numeric" style="width:80px;height:30px" value="${k.goal ?? ''}" data-kpi="goal" data-id="${p.id}" data-i="${i}"></label><label class="row" style="gap:4px"><span class="muted">실제</span><input class="in" type="number" inputmode="numeric" style="width:80px;height:30px" value="${k.act ?? ''}" placeholder="${av != null ? av : ''}" data-kpi="act" data-id="${p.id}" data-i="${i}"></label>${av != null ? `<span class="muted">자동 ${av}</span>` : ''}${k.goal ? `<span class="chip ${(+act || 0) >= +k.goal ? 'c-w' : 'c-g'}">${Math.round((+act || 0) / +k.goal * 100)}%</span>` : ''}<button class="xb" data-act="pkDel" data-id="${p.id}" data-i="${i}" aria-label="삭제">×</button></div>`; }).join('')}
+    <div class="row" style="gap:6px"><input class="in" id="pk-n-${p.id}" placeholder="지표 이름 (방문자, 팔로워, 매출…)" data-enter="pkAdd" data-id="${p.id}"><button class="btn" data-act="pkAdd" data-id="${p.id}">추가</button></div></div>`;
 }
 function goalBar(p, compact){
   if (p.type !== '목표' || p.mTarget == null || p.mTarget === '') return '';
@@ -1602,29 +1653,46 @@ function goalBar(p, compact){
     ${logs.length ? `<div class="muted" style="line-height:1.8">${logs.slice(-8).map(x => md(x.d) + ' ' + x.v + u).join(' · ')}</div>` : ''}</div>`;
 }
 function whoSel(p, i, j, who){ if (isPers(p)) return ''; return `<select class="in who" id="ps-${p.id}-${i}-${j}-w" data-act-change="pstepW" data-id="${p.id}" data-i="${i}" data-j="${j}" aria-label="담당"><option value="">나</option>${ST().staff.map(s => `<option value="${s.id}" ${who === s.id ? 'selected' : ''}>${h(s.n)}</option>`).join('')}</select>`; }
+function mvBtns(pid, i, j){ return `<span class="dh" draggable="true" data-pdrag="${pid}|${i}|${j}" title="끌어서 순서 바꾸기 (하위업무는 다른 단계로도 옮길 수 있어요)" aria-label="순서 바꾸기">⋮⋮</span><button class="xb mvb" data-act="psMove" data-id="${pid}" data-i="${i}" data-j="${j}" data-dir="-1" aria-label="위로">▲</button><button class="xb mvb" data-act="psMove" data-id="${pid}" data-i="${i}" data-j="${j}" data-dir="1" aria-label="아래로">▼</button>`; }
+function pMove(pid, fi, fj, ti, tj){ // 단계·하위업무 순서 이동 (하위업무는 다른 단계로도)
+  const p = clean(S.projects[pid]); const L = p.steps || [];
+  if (fj < 0) { if (fi === ti || !L[fi] || !L[ti]) return; const [st] = L.splice(fi, 1); L.splice(ti, 0, st); }
+  else {
+    const from = L[fi], to = L[ti]; if (!from || !to) return; const [sb] = from.subs.splice(fj, 1); if (!sb) return;
+    if (tj < 0) to.subs = (to.subs || []).concat([sb]); else to.subs.splice(fi === ti ? tj : tj, 0, sb);
+    if (fi !== ti) { const ok = from.id + '/' + sb.id, nk = to.id + '/' + sb.id; PLOCK++; try { Object.values(S.items).filter(x => x.proj === pid && x.punit === ok).forEach(x => put('items', x.id, Object.assign({}, x, { punit: nk }))); Object.values(S.delegs).filter(x => x.proj === pid && x.punit === ok).forEach(x => put('delegs', x.id, Object.assign({}, x, { punit: nk }))); } finally { PLOCK--; } if (!from.subs.length) from.done = !!sb.done && false; }
+  }
+  p.steps = L; put('projects', pid, p);
+}
 function stepRow(p, x, i){
   const subs = x.subs || [], has = subs.length > 0, dn = stepDone(x), pid = p.id;
   const dl = who => who ? `<span class="chip c-warn" style="font-size:10px">위임</span>` : '';
-  const row = `<div class="step"><button class="cb ${dn ? 'on' : ''}" data-act="pstep" data-id="${pid}" data-i="${i}" data-j="-1" aria-label="${h(x.t)} 완료">${dn ? '✓' : ''}</button>
+  const row = `<div class="step" data-pdrop="${pid}|${i}|-1"><button class="cb ${dn ? 'on' : ''}" data-act="pstep" data-id="${pid}" data-i="${i}" data-j="-1" aria-label="${h(x.t)} 완료">${dn ? '✓' : ''}</button>
     <input class="in" id="ps-${pid}-${i}-t" value="${h(x.t)}" data-act-change="pstepT" data-id="${pid}" data-i="${i}" data-j="-1" style="font-weight:600;${dn ? 'text-decoration:line-through;color:var(--fg3)' : ''}">
     <div class="meta">${ddChip(x.due, dn)}<input class="in" type="date" id="ps-${pid}-${i}-d" value="${x.due || ''}" data-act-change="pstepD" data-id="${pid}" data-i="${i}" data-j="-1" aria-label="기한">
     ${has ? `<span class="muted" style="width:130px;text-align:center">하위 ${subs.filter(y => y.done).length}/${subs.length}</span>` : `<input class="in hrs" type="number" step="0.5" min="0" id="ps-${pid}-${i}-h" value="${x.dur != null ? x.dur : ''}" placeholder="시간" data-act-change="pstepH" data-id="${pid}" data-i="${i}" data-j="-1" aria-label="소요 시간">${whoSel(p, i, -1, x.who)}`}</div>
-    <span class="row" style="gap:2px">${has ? '' : dl(x.who)}<button class="xb" data-act="psubOpen" data-id="${pid}" data-i="${i}" title="하위업무 추가" aria-label="하위업무 추가">＋</button><button class="xb" data-act="pstepDel" data-id="${pid}" data-i="${i}" data-j="-1" aria-label="${h(x.t)} 삭제">×</button></span></div>`;
-  const subRows = subs.map((y, j) => `<div class="step sub"><button class="cb ${y.done ? 'on' : ''}" data-act="pstep" data-id="${pid}" data-i="${i}" data-j="${j}" aria-label="${h(y.t)} 완료">${y.done ? '✓' : ''}</button>
+    <span class="row" style="gap:2px">${has ? '' : dl(x.who)}${mvBtns(pid, i, -1)}<button class="xb" data-act="psubOpen" data-id="${pid}" data-i="${i}" title="하위업무 추가" aria-label="하위업무 추가">＋</button><button class="xb" data-act="pstepDel" data-id="${pid}" data-i="${i}" data-j="-1" aria-label="${h(x.t)} 삭제">×</button></span></div>`;
+  const subRows = subs.map((y, j) => `<div class="step sub" data-pdrop="${pid}|${i}|${j}"><button class="cb ${y.done ? 'on' : ''}" data-act="pstep" data-id="${pid}" data-i="${i}" data-j="${j}" aria-label="${h(y.t)} 완료">${y.done ? '✓' : ''}</button>
     <input class="in" id="ps-${pid}-${i}-${j}-t" value="${h(y.t)}" data-act-change="pstepT" data-id="${pid}" data-i="${i}" data-j="${j}" style="${y.done ? 'text-decoration:line-through;color:var(--fg3)' : ''}">
     <div class="meta">${ddChip(y.due || x.due, y.done)}<input class="in" type="date" id="ps-${pid}-${i}-${j}-d" value="${y.due || ''}" placeholder="${x.due || ''}" data-act-change="pstepD" data-id="${pid}" data-i="${i}" data-j="${j}" aria-label="기한" title="${y.due ? '' : '비우면 단계 기한 ' + (x.due || '') + ' 적용'}">
     <input class="in hrs" type="number" step="0.5" min="0" id="ps-${pid}-${i}-${j}-h" value="${y.dur != null ? y.dur : ''}" placeholder="시간" data-act-change="pstepH" data-id="${pid}" data-i="${i}" data-j="${j}" aria-label="소요 시간">${whoSel(p, i, j, y.who)}</div>
-    <span class="row" style="gap:2px">${dl(y.who)}<button class="xb" data-act="pstepDel" data-id="${pid}" data-i="${i}" data-j="${j}" aria-label="${h(y.t)} 삭제">×</button></span></div>`).join('');
+    <span class="row" style="gap:2px">${dl(y.who)}${mvBtns(pid, i, j)}<button class="xb" data-act="pstepDel" data-id="${pid}" data-i="${i}" data-j="${j}" aria-label="${h(y.t)} 삭제">×</button></span></div>`).join('');
   const adder = V.subOpen === pid + ':' + x.id ? `<div class="step sub add"><span></span><input class="in" id="psub-${pid}-${i}" placeholder="하위업무 입력 후 Enter (예: 온라인 대관 신청)" data-enter="psubAdd" data-id="${pid}" data-i="${i}"><div class="meta"><button class="btn sm" data-act="psubAdd" data-id="${pid}" data-i="${i}">추가</button><button class="btn sm ghost" data-act="psubClose">닫기</button></div><span></span></div>` : '';
   return `<div class="sgroup">${row}${subRows}${adder}</div>`;
 }
 function projectDetail(p){
   const st = p.status || 'active';
-  const steps = (p.steps || []).map((x, i) => ({ x, i })).sort((a, b) => (a.x.due || 'z') < (b.x.due || 'z') ? -1 : 1);
+  const steps = (p.steps || []).map((x, i) => ({ x, i })); // 내가 정한 순서 그대로 (끌어서 변경)
   return `<section class="card"><div class="row" style="align-items:flex-start;flex-wrap:wrap"><div style="flex:1;min-width:180px"><div class="muted">${h(typeLabel(p.type))} · ${h(areaName(p.area))}</div><h2 style="font-size:19px">${h(p.name)}</h2></div>
-  <div class="fl"><button class="btn sm" data-act="copyProject" data-id="${p.id}">복사해 새로 만들기</button>${st === 'active' ? `<button class="btn sm" data-act="pstat" data-id="${p.id}" data-s="hold">보류</button><button class="btn sm" data-act="pstat" data-id="${p.id}" data-s="stop">중단</button><button class="btn sm pri" data-act="pstat" data-id="${p.id}" data-s="done">완료</button>` : `<button class="btn sm" data-act="presume" data-id="${p.id}">${st === 'hold' ? '재개' : '다시 진행'}</button>`}<button class="btn sm ghost" data-act="editProjectMeta" data-id="${p.id}">기본 정보 · 날짜</button></div></div>
-  <div class="fl"><button class="chip ${isEvt(p) ? 'c-evt' : 'c-w'}" style="border:0;cursor:pointer;font-size:12px;padding:4px 10px" data-act="editProjectMeta" data-id="${p.id}">${h(projDateTxt(p))}</button><span class="muted">${p.showCal === false ? '캘린더에 표시 안 함' : (isPers(p) ? '개인' : '업무') + ' 캘린더에 표시 중'}${p.venue ? ' · ' + (p.type === '여행' ? '여행지 ' : '행사장 ') + h(p.venue) : ''}${p.attend ? ' · 인원 ' + h(p.attend) : ''}${p.type === '행사' && p.block === true ? ' · 내 근무 포함' : ''}</span></div>
+  <div class="fl"><button class="btn sm" data-act="copyProject" data-id="${p.id}">복사해 새로 만들기</button>${st === 'active' ? `<button class="btn sm" data-act="pstat" data-id="${p.id}" data-s="hold">보류</button><button class="btn sm" data-act="pstat" data-id="${p.id}" data-s="stop">중단</button><button class="btn sm pri" data-act="pstat" data-id="${p.id}" data-s="done">완료</button>` : `<button class="btn sm" data-act="presume" data-id="${p.id}">${st === 'hold' ? '재개' : '다시 진행'}</button>`}<button class="btn sm ghost" data-act="editProjectMeta" data-id="${p.id}">기본 정보 · 날짜</button><button class="btn sm" data-act="copy" data-text="${h(projReport(p))}">보고용 요약 복사</button></div></div>
+  <div class="fl"><button class="chip ${isEvt(p) ? 'c-evt' : 'c-w'}" style="border:0;cursor:pointer;font-size:12px;padding:4px 10px" data-act="editProjectMeta" data-id="${p.id}">${h(projDateTxt(p))}</button><span class="muted">${p.showCal === false ? '캘린더에 표시 안 함' : (isPers(p) ? '개인' : '업무') + ' 캘린더에 표시 중'}${p.venue ? ' · ' + (p.type === '여행' ? '여행지 ' : '행사장 ') + h(p.venue) : ''}${p.attend ? ' · 규모 ' + h(p.attend) : ''}${p.type === '행사' && p.block === true ? ' · 내 근무 포함' : ''}</span></div>
+  ${(p.members || []).length ? `<div class="fl"><span class="muted">함께</span>${p.members.map(n => `<button class="chip c-g" style="font-weight:500;border:0;cursor:pointer" data-act="memberOpen" data-n="${h(n)}" title="인맥 카드 열기">${h(n)}</button>`).join('')}</div>` : (p.attend && !(p.members || []).length ? '' : '')}
   ${goalBar(p, false)}
+  ${projTT(p)}
+  ${projMoney(p)}
+  ${projKpi(p)}
+  ${projLog(p)}
+  ${p.retro ? `<div class="card" style="background:var(--surface2);border:0;gap:6px"><b style="font-size:13px">회고</b>${[['good', '잘된 점'], ['bad', '아쉬운 점'], ['next', '다음에 바꿀 점']].filter(([k]) => p.retro[k]).map(([k, l]) => `<div style="font-size:13px;line-height:1.6"><b>${l}</b> <span style="white-space:pre-wrap">${h(p.retro[k])}</span></div>`).join('')}</div>` : ''}
   ${st !== 'active' ? `<div class="warnbox ${st === 'done' ? 'ok' : ''}">${PS[st][0]} · ${p.statusAt ? md(p.statusAt) : ''}${p.statusMemo ? ' · ' + h(p.statusMemo) : ''}${st === 'hold' ? ' · 기한이 해제되어 오늘·주간 화면과 리소스에서 빠져 있어요' : ''}</div>` : ''}
   <div class="ch"><b style="font-size:14px">단계 · 하위업무</b><span class="muted">${units(p).filter(x => x.done).length} / ${units(p).length} 완료<span class="hint">${isPers(p) ? ' · 체크 항목은 개인 할 일로 자동 등록' : ' · 담당 "나" = 내 할 일, 직원 = 위임으로 자동 등록'}</span></span></div>
   <div class="steps">${steps.map(({ x, i }) => stepRow(p, x, i)).join('')}</div>
@@ -2039,7 +2107,7 @@ function searchAll(q){
   const r = [];
   Object.values(S.items).forEach(i => { if (i.kind === 'move' && has(i.title, i.from, i.to, i.memo)) r.push({ k: '이동', c: 'c-g', t: i.title, sub: mdw(i.date) + ' ' + (i.start || '') + (i.from ? ' · ' + i.from + '→' + i.to : ''), act: 'edit', id: i.id, d: i.date }); if (i.kind === 'task' || i.kind === 'event') { if (has(i.title, i.memo, i.pname, (i.members || []).join(' '), (i.checklist || []).map(c => c.t).join(' '), areaName(i.area))) r.push({ k: i.kind === 'event' ? '일정' : '할 일', c: i.scope === 'personal' ? 'c-p' : 'c-w', t: i.title, sub: [i.date ? mdw(i.date) : '', i.done ? '완료' : '', i.pname || '', memTxt(i)].filter(Boolean).join(' · '), act: 'edit', id: i.id, d: i.date || '' }); } else if (i.kind === 'leave' && has(LT[i.ltype], i.memo)) r.push({ k: '근태', c: 'c-g', t: LT[i.ltype], sub: mdw(i.date), act: 'goDay', id: i.date, d: i.date }); });
   Object.values(S.delegs).forEach(d => { if (has(d.title, d.orig, staffName(d.staff))) r.push({ k: '위임', c: 'c-warn', t: d.title, sub: staffName(d.staff) + ' · ' + DS[d.status][0] + (d.due ? ' · ' + mdw(d.due) : ''), act: 'peekDeleg', id: d.id, d: d.due || '' }); });
-  Object.values(S.projects).forEach(p => { const hit = has(p.name, p.memo) ? p.name : ((p.steps || []).map(st => [st.t].concat((st.subs || []).map(sb => sb.t))).flat().find(x => has(x))); if (hit) r.push({ k: '프로젝트', c: 'c-dash', t: p.name, sub: hit !== p.name ? '… ' + hit : PS[p.status || 'active'][0], act: 'peekProject', id: p.id, d: '' }); });
+  Object.values(S.projects).forEach(p => { const hit = has(p.name, p.memo, (p.members || []).join(' '), p.venue, (p.costs || []).map(c => c.t).join(' '), (p.log || []).map(c => c.t).join(' ')) ? p.name : ((p.steps || []).map(st => [st.t].concat((st.subs || []).map(sb => sb.t))).flat().find(x => has(x))); if (hit) r.push({ k: '프로젝트', c: 'c-dash', t: p.name, sub: hit !== p.name ? '… ' + hit : PS[p.status || 'active'][0], act: 'peekProject', id: p.id, d: '' }); });
   Object.values(S.notes || {}).forEach(x => { if (!LIB[x.lib] || LIB[x.lib].locked) return; const strs = Object.values(x).map(v => Array.isArray(v) ? v.map(y => y && y.t ? y.t : '').join(' ') : typeof v === 'string' ? v : '').join(' '); if (has(strs)) { const rr = LIB[x.lib].row(x); r.push({ k: LIB[x.lib].one, c: 'c-p', t: rr.t || '', sub: rr.sub || '', act: 'libOpen', id: x.id, lib: x.lib, d: x.date || '' }); } });
   Object.values(S.routines).forEach(x => { if (has(x.title)) r.push({ k: '반복', c: 'c-g', t: x.title, sub: freqLabel(x), act: 'editRoutine', id: x.id, d: '' }); });
   const T = TODAY(); return r.sort((a, b) => { const da = a.d ? Math.abs(P(a.d) - P(T)) : 9e15, db = b.d ? Math.abs(P(b.d) - P(T)) : 9e15; return da - db; }).slice(0, 40);
@@ -2071,11 +2139,11 @@ async function moveItem(id, date, start, why){
 }
 
 /* 함께하는 사람 */
-function knownMembers(){ const c = {}; Object.values(S.items).forEach(i => (i.members || []).forEach(n => { c[n] = (c[n] || 0) + 1; })); ST().staff.forEach(s => { c[s.n] = (c[s.n] || 0) + 0.5; }); return Object.keys(c).sort((a, b) => c[b] - c[a]); }
-function membersField(f){
+function knownMembers(){ const c = {}; Object.values(S.items).concat(Object.values(S.projects)).forEach(i => (i.members || []).forEach(n => { c[n] = (c[n] || 0) + 1; })); Object.values(S.notes || {}).forEach(x => { if (x.lib === 'people' && x.name) c[x.name] = (c[x.name] || 0) + 0.3; }); ST().staff.forEach(s => { c[s.n] = (c[s.n] || 0) + 0.5; }); return Object.keys(c).sort((a, b) => c[b] - c[a]); }
+function membersField(f, label){
   const cur = f.members || [], sug = knownMembers().filter(n => !cur.includes(n) && (!f._mb || n.indexOf(f._mb) >= 0)).slice(0, 8);
-  return `<div class="f" style="gap:6px"><span style="font-size:12px;color:var(--fg2)">함께하는 사람</span>
-    <div class="mbox">${cur.map((n, i) => `<span class="chip c-g mchip">${h(n)}<button class="xb" data-act="mbDel" data-i="${i}" aria-label="${h(n)} 빼기">×</button></span>`).join('')}<input class="in" id="e-mb" data-f="_mb" value="${h(f._mb || '')}" placeholder="${cur.length ? '추가' : '이름 입력 후 Enter (예: 김대표, 박과장)'}" data-enter="mbAdd" autocomplete="off"></div>
+  return `<div class="f" style="gap:6px"><span style="font-size:12px;color:var(--fg2)">${label || '함께하는 사람'}</span>
+    <div class="mbox">${cur.map((n, i) => `<span class="chip c-g mchip">${h(n)}<button class="xb" data-act="mbDel" data-i="${i}" aria-label="${h(n)} 빼기">×</button></span>`).join('')}<input class="in" id="e-mb" data-f="_mb" value="${h(f._mb || '')}" placeholder="${cur.length ? '추가' : '이름 입력 후 Enter (여러 명은 쉼표로)'}" data-enter="mbAdd" autocomplete="off"></div>
     ${sug.length ? `<div class="fl">${sug.map(n => `<button class="opt" data-act="mbPick" data-v="${h(n)}">+ ${h(n)}</button>`).join('')}</div>` : ''}</div>`;
 }
 const memTxt = i => (i.members || []).length ? '함께: ' + i.members.join(', ') : '';
@@ -2120,7 +2188,7 @@ async function editSave(extra){
   if (f._orig && f._orig !== f.date) f.hist = (f.hist || []).concat([{ from: f._orig, to: f.date, why: f._reason || '', at: TODAY() }]);
   if (f.kind === 'event' && f.start && !f.end) f.end = toHM(Math.min(23.99, hm(f.start) + 1));
   const id = f.id || uid();
-  if (f._mb && f._mb.trim()) f.members = (f.members || []).concat(f._mb.split(/[,\s]+/).filter(Boolean));
+  if (f._mb && f._mb.trim()) f.members = (f.members || []).concat(f._mb.split(/\s*,\s*/).filter(Boolean));
   ['_new','_orig','_reason','_ck','_fin','_mb','id','up'].forEach(k => delete f[k]);
   if (f.dur !== undefined && f.dur !== '') f.dur = +f.dur;
   if (!f.dateEnd || f.kind !== 'event' || f.dateEnd <= f.date) delete f.dateEnd;
@@ -2217,28 +2285,32 @@ function openProjectNew(copyFrom){
   const srcP = isCopy ? (S.projects[copyFrom] || Object.values(S.projects).sort((x, y) => (y.star ? 1 : 0) - (x.star ? 1 : 0))[0]) : null;
   const pers = srcP ? isPers(srcP) : V.mode === 'personal';
   const b0 = pers ? add(TODAY(), 30) : (() => { let k = add(TODAY(), 21); while (dow(k) !== 6) k = add(k, 1); return k; })(); // 행사 기본: 3주 뒤 토요일
-  const f = { mode: isCopy ? 'copy' : 'blank', scope: pers ? 'personal' : 'work', src: srcP ? srcP.id : (Object.values(S.projects)[0] || {}).id, name: srcP ? srcP.name + ' (복사)' : '', type: srcP ? srcP.type || '프로젝트' : (pers ? '일반' : '행사'), area: '', base: b0, keyLabel: srcP ? srcP.keyLabel || '마감일' : '마감일', showCal: true, block: false, evE: pers ? '' : add(b0, 1), _len: 1, venue: '', attend: '', tpl: pers ? '일반' : '',
+  const f = { members: srcP ? (srcP.members || []).slice() : [], budget: srcP && srcP.budget != null ? srcP.budget : '', kpis: srcP ? (srcP.kpis || []).map(k => ({ n: k.n, goal: k.goal })) : null, mode: isCopy ? 'copy' : 'blank', scope: pers ? 'personal' : 'work', src: srcP ? srcP.id : (Object.values(S.projects)[0] || {}).id, name: srcP ? srcP.name + ' (복사)' : '', type: srcP ? srcP.type || '프로젝트' : (pers ? '일반' : '행사'), area: '', base: b0, keyLabel: srcP ? srcP.keyLabel || '마감일' : '마감일', showCal: true, block: false, evE: pers ? '' : add(b0, 1), _len: 1, venue: '', attend: '', tpl: pers ? '일반' : '',
     steps: pers ? PTPL['일반'].steps.map(x => ({ t: x.t, off: x.off, subs: x.subs.slice() })) : STEPS_E.map(t => ({ t })), gap: 5 };
   openModal({ title: isCopy ? '복사해 새로 만들기' : pers ? '새 목표 · 개인 프로젝트' : '새 행사 · 프로젝트', cls: 'wide', f, focus: 'np-name', body(){
     const src = S.projects[f.src];
     let preview = [];
-    if (f.scope === 'personal' && f.mode === 'blank') { preview = f.steps.map(x => ({ t: x.t + ((x.subs || []).length ? ' (체크 ' + x.subs.length + ')' : ''), to: x.off != null ? add(f.base, x.off) : f.base })); }
+    if (f.scope === 'personal' && f.mode === 'blank') { preview = f.steps.map(x => ({ t: x.t, sfx: (x.subs || []).length ? '체크 ' + x.subs.length : '', to: x.off != null ? add(f.base, x.off) : f.base })); }
     else
     if (f.mode === 'copy' && src) {
       const dates = (src.steps || []).filter(x => x.due).map(x => x.due).sort(); const anchor = dates[dates.length - 1];
-      preview = (src.steps || []).map(x => ({ t: x.t + ((x.subs || []).length ? ' (하위 ' + x.subs.length + ')' : ''), from: x.due, to: x.due && anchor ? snapWd(add(npAnchor(f), Math.round((P(x.due) - P(anchor)) / 864e5))) : null, who: x.who, dur: x.dur, area: x.area }));
+      preview = (src.steps || []).map(x => ({ t: x.t, sfx: (x.subs || []).length ? '하위 ' + x.subs.length : '', from: x.due, to: x.due && anchor ? snapWd(add(npAnchor(f), Math.round((P(x.due) - P(anchor)) / 864e5))) : null, who: x.who, dur: x.dur, area: x.area }));
     } else preview = f.steps.map((x, i) => ({ t: x.t, to: snapWd(add(npAnchor(f), -(f.steps.length - 1 - i) * f.gap)) }));
     const pers = f.scope === 'personal';
     let cap = 0, asg = 0; for (let s = TODAY(); s <= f.base; s = add(s, 1)) { cap += workCap(s); asg += assignedWork(s); }
     return `<div class="fl"><div class="seg"><button class="${f.mode === 'blank' ? 'on' : ''}" data-act="npSet" data-k="mode" data-v="blank">빈 프로젝트</button><button class="${f.mode === 'copy' ? 'on' : ''}" data-act="npSet" data-k="mode" data-v="copy" ${Object.keys(S.projects).length ? '' : 'disabled'}>기존 것 복사</button></div></div>
+    ${f.mode === 'copy' && src && src.retro && (src.retro.next || src.retro.bad) ? `<div class="warnbox" style="white-space:pre-wrap;line-height:1.6"><b>지난 회고 (${h(src.name)})</b>${src.retro.next ? '\n다음에 바꿀 점: ' + h(src.retro.next) : ''}${src.retro.bad ? '\n아쉬운 점: ' + h(src.retro.bad) : ''}</div>` : ''}
     ${f.mode === 'copy' ? `<div class="fl"><span class="muted">원본</span>${Object.values(S.projects).sort((a, b) => (b.star ? 1 : 0) - (a.star ? 1 : 0)).map(p => opt(f.src === p.id, 'npSet', `data-k="src" data-v="${p.id}"`, (p.star ? '★ ' : '') + h(p.name))).join('')}</div>` : ''}
     <div class="fgrid"><label class="f">이름<input class="in" id="np-name" data-f="name" value="${h(f.name)}" placeholder="${f.type === '행사' ? '예: 하나투어 여행박람회' : '예: 동남아 랜딩페이지'}"></label><label class="f">캘린더 약칭 (비우면 자동)<input class="in" id="np-abbr" data-f="abbr" value="${h(f.abbr || '')}" maxlength="6" placeholder="${h(abbrOf({ name: f.name }) || '예: 베트남')}"></label></div>
     ${pers && f.mode === 'blank' ? `<div class="fl"><span class="muted">체크리스트 템플릿</span>${Object.keys(PTPL).map(k => opt(f.tpl === k, 'npTpl', `data-v="${k}"`, k)).join('')}</div>` : ''}
     <div class="fl">${(pers ? PTYPES : [['행사', '날짜가 정해진 박람회·설명회'], ['프로젝트', '결과물을 만드는 일'], ['모니터링', '직접 만들진 않고 진행 상황만 확인할 일 (예: 대관 가능 여부 확인)']]).map(([t, d]) => opt(typeLabel(f.type) === t, 'npSet', `data-k="type" data-v="${t}" title="${d}"`, t)).join('')}${pers ? '' : ''}<select class="in" id="np-area" data-f="area" style="width:auto"><option value="">대표 분류 없음</option>${(pers ? ST().pareas : ST().areas).map(a => `<option value="${a.id}" ${a.id === f.area ? 'selected' : ''}>${h(a.n)}</option>`).join('')}</select></div>
     ${calFields(f)}
+    ${membersField(f, f.scope === 'personal' ? '함께하는 사람' : '함께하는 사람 (담당자 · 협력사 · 거래처)')}
+    <label class="f">예산 (선택)<input class="in" type="number" inputmode="numeric" id="np-bud" data-f="budget" value="${h(f.budget ?? '')}" placeholder="원" style="max-width:220px"></label>
     <div class="muted hint">${pers && f.mode === 'blank' ? '단계와 체크 항목은 ' + (PKEY[f.type] || (f.type === '여행' ? '출발일' : '날짜')) + ' 기준으로 기한이 잡히고, 개인 할 일로 들어가요.' : f.mode === 'copy' ? '원본의 마지막 단계가 ' + (f.type === '행사' ? '행사 시작일' : '대표 날짜') + '에 맞춰지고, 나머지 단계도 같은 간격으로 옮겨져요.' : '단계 기한은 ' + (f.type === '행사' ? '행사 전날(근무일)' : '대표 날짜') + '에서 거꾸로 ' + f.gap + '일 간격으로 잡혀요.'}</div>
-    <div class="tbl"><div class="tr hd" style="grid-template-columns:minmax(0,1fr) 90px 90px 28px"><span>단계</span><span>${f.mode === 'copy' ? '원본' : ''}</span><span>새 날짜</span><span></span></div>
-    ${preview.map((x, i) => `<div class="tr" style="grid-template-columns:minmax(0,1fr) 90px 90px 28px"><span class="ell">${h(x.t)}</span><span class="muted">${x.from ? md(x.from) : ''}</span><b>${x.to ? mdw(x.to) : '—'}</b>${f.mode === 'blank' ? `<button class="xb" data-act="npDel" data-i="${i}" aria-label="삭제">×</button>` : '<span></span>'}</div>`).join('')}</div>
+    <div class="tbl"><div class="tr hd" style="grid-template-columns:minmax(0,1fr) ${f.mode === 'copy' ? '50px ' : ''}150px 28px"><span>단계</span>${f.mode === 'copy' ? '<span>원본</span>' : ''}<span>날짜</span><span></span></div>
+    ${preview.map((x, i) => { const o = (f.ov || {})[i] || {}; return `<div class="tr np-row" style="grid-template-columns:minmax(0,1fr) ${f.mode === 'copy' ? '50px ' : ''}150px 28px;align-items:center"><span class="row" style="gap:6px;min-width:0"><input class="in" id="npt-${i}" data-npt="${i}" value="${h(o.t != null ? o.t : x.t)}" aria-label="단계 이름" style="height:32px;flex:1;min-width:0">${x.sfx ? `<span class="muted" style="white-space:nowrap">${x.sfx}</span>` : ''}</span>${f.mode === 'copy' ? `<span class="muted">${x.from ? md(x.from) : ''}</span>` : ''}<input class="in" type="date" id="npd-${i}" data-npd="${i}" value="${h(o.due || x.to || '')}" aria-label="기한" style="height:32px;${o.due ? 'border-color:var(--acc)' : ''}">${f.mode === 'blank' ? `<button class="xb" data-act="npDel" data-i="${i}" aria-label="삭제">×</button>` : '<span></span>'}</div>`; }).join('')}</div>
+    <span class="muted hint">단계 이름과 날짜를 바로 고칠 수 있어요. 직접 고친 날짜는 파란 테두리로 표시되고, 기준일·간격을 바꿔도 그대로 유지돼요.</span>
     ${f.mode === 'blank' ? `<div class="row"><input class="in" id="np-step" data-f="_s" value="${h(f._s || '')}" placeholder="단계 추가 (Enter)" data-enter="npAdd"><button class="btn" data-act="npAdd">+ 추가</button><span class="muted" style="white-space:nowrap">간격</span><input class="in" type="number" min="1" id="np-gap" data-f="gap" data-num="1" value="${f.gap}" style="width:70px"><span class="muted">일</span></div>` : ''}
     <div class="warnbox">${pers ? '만들면 체크 항목이 개인 할 일로 등록돼요' : '오늘~' + mdw(f.base) + ' 업무 여유 ' + fh(cap - asg)}<span class="hint"> · 만들면 각 단계가 내 할 일로 바로 등록돼요. 하위업무·담당 직원은 만든 뒤 프로젝트 화면에서 추가하세요.</span></div>
     <div class="foot"><span class="grow"></span><button class="btn pri" data-act="npSave">만들기</button></div>`;
@@ -2253,8 +2325,9 @@ function openPStat(id, s){
   openModal({ title: T[0], f, body(){
     return `<b>${h(p.name)}</b><div class="card" style="background:var(--surface2);border:0;gap:6px">${T[1].map(x => `<span style="font-size:13px">· ${h(x)}</span>`).join('')}</div>
     ${s === 'done' && open ? `<div class="fl">${opt(f.split === 'all', 'psSet', 'data-k="split" data-v="all"', '남은 단계 모두 완료로')}${opt(f.split === 'split', 'psSet', 'data-k="split" data-v="split"', '남은 단계만 할 일로 분리')}</div>` : ''}
+    ${s === 'done' && (p.kpis || []).some(k => k.act == null || k.act === 0) ? `<div class="warnbox">성과 지표 실제 값을 아직 안 넣었어요. 완료 후 프로젝트 화면에서 넣을 수 있어요.</div>` : ''}
     ${s === 'done' ? `<div class="fl">${opt(f.star, 'psSet', `data-k="star" data-v="${f.star ? '' : '1'}"`, '★ 복사 원본으로 표시')}</div>` : ''}
-    <label class="f">${T[2]}<textarea class="in" id="ps-memo" data-f="memo" rows="3"></textarea></label>
+    ${s === 'done' ? `<label class="f">잘된 점<textarea class="in" id="ps-rg" data-f="rg" rows="2">${h(f.rg || '')}</textarea></label><label class="f">아쉬운 점<textarea class="in" id="ps-rb" data-f="rb" rows="2">${h(f.rb || '')}</textarea></label><label class="f">다음에 바꿀 점 (복사해 만들 때 보여 드려요)<textarea class="in" id="ps-rn" data-f="rn" rows="2">${h(f.rn || '')}</textarea></label>` : `<label class="f">${T[2]}<textarea class="in" id="ps-memo" data-f="memo" rows="3"></textarea></label>`}
     <div class="foot"><span class="grow"></span><button class="btn ${s === 'stop' ? 'danger' : 'pri'}" data-act="psSave">${T[0].replace('하기', '')} 확정</button></div>`;
   }});
 }
@@ -2412,6 +2485,21 @@ const A = {
   edit: d => { const i = S.items[d.id]; if (i) openEdit(i); },
   toggleTask: async d => { const i = S.items[d.id]; if (!i) return; await undoable(i.done ? '미완료로 돌렸어요' : '완료 · ' + i.title, () => put('items', i.id, Object.assign({}, i, { done: !i.done, doneAt: !i.done ? Date.now() : null }))); },
   undo: () => doUndo(),
+  memberOpen: d => { const n = d.n, P0 = Object.values(S.notes || {}).filter(x => x.lib === 'people'); const hit = P0.find(x => x.name === n) || P0.find(x => x.name && (n.indexOf(x.name) >= 0 || x.name.indexOf(n) >= 0)); if (M) closeModal(); if (hit) openLib('people', hit); else { openLib('people', null); M.f.name = n; M.f.rel = '사업'; renderModal(); toast('인맥에 없는 사람이에요 · 저장하면 추가돼요'); } },
+  plAdd: async d => { const el = $('pl-' + d.id); const t = el && el.value.trim(); if (!t) return; const p = S.projects[d.id]; await put('projects', p.id, Object.assign({}, p, { log: (p.log || []).concat([{ k: uid(), d: TODAY(), t }]) })); setTimeout(() => { const e2 = $('pl-' + d.id); if (e2) e2.focus(); }, 30); },
+  plDel: async d => { const p = S.projects[d.id]; await undoable('기록을 지웠어요', () => put('projects', p.id, Object.assign({}, p, { log: (p.log || []).filter(x => x.k !== d.k) }))); },
+  ttAdd: async d => { const el = $('tt-' + d.id); const t = el && el.value.trim(); if (!t) return; const p = S.projects[d.id]; const r = evRange(p) || [TODAY(), TODAY()];
+    const pq = parseQuick(t, 'event'); let date = pq.date || r[0]; const wm = t.match(/(?:^|\s)([월화수목금토일])(?:요일)?(?=\s)/); if (wm && !/\d{1,2}\s*[\/.]\s*\d{1,2}/.test(t)) { date = r[0]; for (let k = r[0]; k <= r[1]; k = add(k, 1)) if (W[dow(k)] === wm[1]) { date = k; break; } }
+    const start = pq.start || null, end = pq.end || (start ? toHM(Math.min(23.99, hm(start) + (pq.dur || 1))) : null);
+    await put('items', uid(), { kind: 'event', title: pq.title.replace(/^[월화수목금토일]\s+/, '') || t, scope: isPers(p) ? 'personal' : 'work', date, start, end, dur: start && end ? r2(hm(end) - hm(start)) : 1, evProj: p.id, pname: p.name, members: [], checklist: [], done: false, created: Date.now() });
+    setTimeout(() => { const e2 = $('tt-' + d.id); if (e2) e2.focus(); }, 30); },
+  ttDel: async d => { await undoable('타임테이블에서 지웠어요', () => del('items', d.id)); },
+  psMove: d => { const i = +d.i, j = +d.j, dir = +d.dir, p = S.projects[d.id]; if (j < 0) { const ti = i + dir; if (ti < 0 || ti >= p.steps.length) return; pMove(d.id, i, -1, ti, -1); } else { const n = (p.steps[i].subs || []).length, tj = j + dir; if (tj < 0 || tj >= n) return; pMove(d.id, i, j, i, tj); } },
+  pmOpen: d => { V['moneyOpen' + d.id] = true; render(); }, pkOpen: d => { V['kpiOpen' + d.id] = true; render(); },
+  pcAdd: async d => { const t = ($('pc-t-' + d.id) || {}).value || '', a = ($('pc-a-' + d.id) || {}).value || ''; if (!t.trim() || !a) { toast('항목과 금액을 넣어 주세요.'); return; } const p = S.projects[d.id]; await put('projects', p.id, Object.assign({}, p, { costs: (p.costs || []).concat([{ d: TODAY(), t: t.trim(), amt: +a }]) })); setTimeout(() => { const el = $('pc-t-' + d.id); if (el) el.focus(); }, 30); },
+  pcDel: async d => { const p = S.projects[d.id]; await undoable('비용 항목을 지웠어요', () => put('projects', p.id, Object.assign({}, p, { costs: (p.costs || []).filter((_, i) => i !== +d.i) }))); },
+  pkAdd: async d => { const n = (($('pk-n-' + d.id) || {}).value || '').trim(); if (!n) return; const p = S.projects[d.id]; await put('projects', p.id, Object.assign({}, p, { kpis: (p.kpis || []).concat([{ n, goal: null, act: 0 }]) })); },
+  pkDel: async d => { const p = S.projects[d.id]; await put('projects', p.id, Object.assign({}, p, { kpis: (p.kpis || []).filter((_, i) => i !== +d.i) })); },
   goHub: d => { V.hub = d.h; V.lib = HUBS[d.h].libs[0]; V.libQ = ''; V.leadSt = ''; go('lib'); },
   libTab: d => { V.lib = d.l; V.libQ = ''; render(); },
   libNew: d => openLib(d.l || V.lib), libOpen: d => { const x = LIB[d.lib].locked ? VAULT.cache[d.id] : S.notes[d.id]; if (x) openLib(d.lib, x); else if (LIB[d.lib].locked) { V.hub = 'health'; go('lib'); } },
@@ -2495,14 +2583,16 @@ const A = {
   psubClose: () => { V.subOpen = null; render(); },
   psubAdd: async d => { const el = $('psub-' + d.id + '-' + d.i); const t = el && el.value.trim(); if (!t) return; editUnit(d.id, +d.i, -1, u => { const first = !(u.subs || []).length; u.subs = (u.subs || []).concat([{ t, due: null, who: first ? (u.who || '') : '', done: false, dur: first && u.dur != null ? u.dur : null }]); if (first) { u.who = ''; u.done = false; } }); setTimeout(() => { const e2 = $('psub-' + d.id + '-' + d.i); if (e2) e2.focus(); }, 30); },
   pdelete: d => openModal({ title: '프로젝트 삭제', body: () => `<span>"${h(S.projects[d.id].name)}"을 삭제할까요? 단계와 메모가 모두 지워져요. 기록을 남기려면 "완료"나 "중단"을 쓰세요.</span><div class="foot"><span class="grow"></span><button class="btn" data-act="close">취소</button><button class="btn danger" data-act="pdeleteOk" data-id="${d.id}">삭제</button></div>` }),
-  pdeleteOk: async d => { V.selProject = null; closeModal(); await undoable('프로젝트를 삭제했어요', () => { PLOCK++; try { Object.values(S.items).filter(i => i.proj === d.id && !i.done).forEach(i => del('items', i.id)); } finally { PLOCK--; } return del('projects', d.id); }); },
-  editProjectMeta: d => { const p = S.projects[d.id]; const kl = p.keyLabel || '마감일'; const f = { _len: p.evS && p.evE ? Math.max(0, Math.round((P(p.evE) - P(p.evS)) / 864e5)) : 1, scope: p.scope || 'work', venue: p.venue || '', attend: p.attend || '', mUnit: p.mUnit || '', mStart: p.mStart ?? '', mTarget: p.mTarget ?? '', name: p.name, abbr: p.abbr || '', type: p.type || '프로젝트', area: p.area || '', base: (isEvt(p) ? p.evS : p.keyDate) || '', evE: p.evE || '', keyLabel: KEYLABELS.includes(kl) ? kl : '마감일', keyLabelC: KEYLABELS.includes(kl) || kl === '행사일' ? '' : kl, showCal: p.showCal !== false, block: p.block === true, evStaff: p.evStaff || '', shift: true, _old: (isEvt(p) ? p.evS : p.keyDate) || '' };
+  pdeleteOk: async d => { V.selProject = null; closeModal(); await undoable('프로젝트를 삭제했어요', () => { PLOCK++; try { Object.values(S.items).filter(i => (i.proj === d.id && !i.done) || i.evProj === d.id).forEach(i => del('items', i.id)); } finally { PLOCK--; } return del('projects', d.id); }); },
+  editProjectMeta: d => { const p = S.projects[d.id]; const kl = p.keyLabel || '마감일'; const f = { members: (p.members || (p.attend && !/\d/.test(p.attend) ? [p.attend] : [])).slice(), budget: p.budget ?? '', _len: p.evS && p.evE ? Math.max(0, Math.round((P(p.evE) - P(p.evS)) / 864e5)) : 1, scope: p.scope || 'work', venue: p.venue || '', attend: p.attend || '', mUnit: p.mUnit || '', mStart: p.mStart ?? '', mTarget: p.mTarget ?? '', name: p.name, abbr: p.abbr || '', type: p.type || '프로젝트', area: p.area || '', base: (isEvt(p) ? p.evS : p.keyDate) || '', evE: p.evE || '', keyLabel: KEYLABELS.includes(kl) ? kl : '마감일', keyLabelC: KEYLABELS.includes(kl) || kl === '행사일' ? '' : kl, showCal: p.showCal !== false, block: p.block === true, evStaff: p.evStaff || '', shift: true, _old: (isEvt(p) ? p.evS : p.keyDate) || '' };
     openModal({ title: '기본 정보 · 날짜', cls: 'wide', f, body: () => `<div class="fgrid"><label class="f">이름<input class="in" id="pm-n" data-f="name" value="${h(f.name)}"></label><label class="f">캘린더 약칭 (비우면 자동)<input class="in" id="pm-ab" data-f="abbr" value="${h(f.abbr || '')}" maxlength="6" placeholder="${h(abbrOf({ name: f.name }))}"></label></div><div class="fl">${(f.scope === 'personal' ? PTYPES.map(x => x[0]) : ['행사','프로젝트','모니터링']).map(t => opt(typeLabel(f.type) === t, 'pmSet', `data-v="${t}"`, t)).join('')}</div><label class="f">대표 분류<select class="in" id="pm-a" data-f="area"><option value="">없음</option>${(f.scope === 'personal' ? ST().pareas : ST().areas).map(a => `<option value="${a.id}" ${a.id === f.area ? 'selected' : ''}>${h(a.n)}</option>`).join('')}</select></label>
     ${calFields(f)}
+    ${membersField(f, f.scope === 'personal' ? '함께하는 사람' : '함께하는 사람 (담당자 · 협력사 · 거래처)')}
+    <label class="f">예산<input class="in" type="number" inputmode="numeric" id="pm-bud" data-f="budget" value="${h(f.budget ?? '')}" placeholder="원" style="max-width:220px"></label>
     ${f._old && f.base && f._old !== f.base ? `<div class="fl">${opt(f.shift, 'cfT2', '', '남은 단계 기한도 ' + Math.round((P(f.base) - P(f._old)) / 864e5) + '일 같이 옮기기')}</div>` : ''}
     <div class="foot"><span class="grow"></span><button class="btn pri" data-act="pmSave" data-id="${p.id}">저장</button></div>` }); },
   cfT2: () => { M.f.shift = !M.f.shift; renderModal(); }, cfT2b: () => { M.f.block = M.f.block === true ? false : true; renderModal(); },
-  pmSet: d => { M.f.type = d.v; renderModal(); }, pmSave: async d => { const p = S.projects[d.id], f = M.f; const o = Object.assign({}, p, { name: f.name, abbr: (f.abbr || '').trim(), type: f.type, area: f.area }, calData(f));
+  pmSet: d => { M.f.type = d.v; renderModal(); }, pmSave: async d => { const p = S.projects[d.id], f = M.f; const o = Object.assign({}, p, { name: f.name, abbr: (f.abbr || '').trim(), type: f.type, area: f.area, members: (f.members || []).concat((f._mb || '').split(/\s*,\s*/).filter(Boolean)), budget: f.budget === '' || f.budget == null ? null : +f.budget }, calData(f));
     if (f.shift && f._old && f.base && f._old !== f.base) { const sh = Math.round((P(f.base) - P(f._old)) / 864e5); o.steps = (p.steps || []).map(x => { if (stepDone(x)) return x; const wd = x => { let k = add(x, sh); for (let i = 0; i < 10 && isOff(k); i++) k = add(k, -1); return k; }; const y = Object.assign({}, x); if (y.due) y.due = wd(y.due); y.subs = (y.subs || []).map(sb => (!sb.done && sb.due) ? Object.assign({}, sb, { due: wd(sb.due) }) : sb); return y; }); }
     closeModal(); await undoable('저장했어요', () => put('projects', p.id, o)); },
   resPer: d => { V.resPer = d.p; render(); },
@@ -2539,7 +2629,7 @@ const A = {
   ckA: () => { const t = (M.f._ck || '').trim(); if (!t) return; M.f.checklist = M.f.checklist.concat([{ t, d: false }]); M.f._ck = ''; renderModal(); const el = $('e-ck'); if (el) el.focus(); },
   eFinish: d => { const x = { done: !M.f.done, doneAt: Date.now() }; if (d.v) { x.actual = +d.v; if (M.f.est == null) x.est = M.f.dur; } if (M.f.done) { x.done = false; x.doneAt = null; } editSave(x); },
   eSave: () => editSave(), eDelete: async () => { const id = M.f.id; closeModal(); if (id) await undoable('삭제했어요', () => del('items', id)); },
-  mbAdd: () => { const v = (M.f._mb || '').trim(); if (!v) return; M.f.members = (M.f.members || []).concat(v.split(/[,\s]+/).filter(Boolean).filter(n => !(M.f.members || []).includes(n))); M.f._mb = ''; renderModal(); const el = $('e-mb'); if (el) el.focus(); },
+  mbAdd: () => { const v = (M.f._mb || '').trim(); if (!v) return; M.f.members = (M.f.members || []).concat(v.split(/\s*,\s*/).filter(Boolean).filter(n => !(M.f.members || []).includes(n))); M.f._mb = ''; renderModal(); const el = $('e-mb'); if (el) el.focus(); },
   mbPick: d => { if (!(M.f.members || []).includes(d.v)) M.f.members = (M.f.members || []).concat([d.v]); M.f._mb = ''; renderModal(); },
   mbDel: d => { M.f.members = (M.f.members || []).filter((_, i) => i !== +d.i); renderModal(); },
   rUntil: d => { M.f.until = d.n === '' ? '' : add(M.f.from || TODAY(), +d.n); renderModal(); },
@@ -2560,22 +2650,24 @@ const A = {
     if (HOURLY.includes(f.ltype)) { f.hours = Math.round(+f.hours); if (!(f.hours >= 1)) { toast('사용 시간은 1시간 단위로 입력해 주세요.'); return; } }
     for (const i of itemsOn(f.date).filter(i => (i.scope || 'work') === 'work' && !i.done)) { const a = f.acts[i.id] || (partial ? 'keep' : 'next'); if (a === 'keep') continue; let nd = a === 'next' ? nextWorkday(f.date) : add(f.date, -1); if (a === 'prev') while (isOff(nd)) nd = add(nd, -1); await put('items', i.id, Object.assign({}, i, { date: nd, hist: (i.hist || []).concat([{ from: f.date, to: nd, why: LT[f.ltype], at: TODAY() }]) })); }
     await put('items', uid(), { kind: 'leave', ltype: f.ltype, date: f.date, hours: HOURLY.includes(f.ltype) ? +f.hours : null, endT: f.ltype === 'short' ? f.endT : null, memo: f.memo, created: Date.now() }); closeModal(); toast(LT[f.ltype] + ' 등록 · ' + mdw(f.date)); },
-  npTpl: d => { const t = PTPL[d.v]; if (!t) return; M.f.tpl = d.v; M.f.type = t.type; M.f.steps = t.steps.map(x => ({ t: x.t, off: x.off, subs: x.subs.slice() })); if (t.type === '여행') { M.f.evE = add(M.f.base, 3); M.f._len = 3; } if (!M.f.name) M.f.name = d.v === '일반' ? '' : d.v; renderModal(); },
-  npSet: d => { M.f[d.k] = d.v; if (d.k === 'type' && (d.v === '행사' || d.v === '여행') && (!M.f.evE || M.f.evE < M.f.base)) M.f.evE = add(M.f.base, 1); if (d.k === 'type' && M.f.mode === 'blank') { const cur = M.f.steps.map(x => x.t).join('|'); if (d.v === '행사' && cur === STEPS_P.join('|')) M.f.steps = STEPS_E.map(t => ({ t })); if (d.v !== '행사' && cur === STEPS_E.join('|')) M.f.steps = STEPS_P.map(t => ({ t })); } if (d.k === 'src') { const p = S.projects[d.v]; if (p) { M.f.name = p.name + ' (복사)'; M.f.type = p.type || '프로젝트'; M.f.keyLabel = p.keyLabel || '마감일'; } } renderModal(); },
+  npTpl: d => { const t = PTPL[d.v]; if (!t) return; M.f.ov = {}; M.f.tpl = d.v; M.f.type = t.type; M.f.steps = t.steps.map(x => ({ t: x.t, off: x.off, subs: x.subs.slice() })); if (t.type === '여행') { M.f.evE = add(M.f.base, 3); M.f._len = 3; } if (!M.f.name) M.f.name = d.v === '일반' ? '' : d.v; renderModal(); },
+  npSet: d => { if (d.k === 'mode' || d.k === 'src') M.f.ov = {}; M.f[d.k] = d.v; if (d.k === 'type' && (d.v === '행사' || d.v === '여행') && (!M.f.evE || M.f.evE < M.f.base)) M.f.evE = add(M.f.base, 1); if (d.k === 'type' && M.f.mode === 'blank') { const cur = M.f.steps.map(x => x.t).join('|'); if (d.v === '행사' && cur === STEPS_P.join('|')) M.f.steps = STEPS_E.map(t => ({ t })); if (d.v !== '행사' && cur === STEPS_E.join('|')) M.f.steps = STEPS_P.map(t => ({ t })); } if (d.k === 'src') { const p = S.projects[d.v]; if (p) { M.f.name = p.name + ' (복사)'; M.f.type = p.type || '프로젝트'; M.f.keyLabel = p.keyLabel || '마감일'; } } renderModal(); },
   cfT: d => { M.f[d.k] = M.f[d.k] === false ? true : false; renderModal(); }, cfLabel: d => { M.f.keyLabel = d.v; M.f.keyLabelC = ''; renderModal(); },
-  npDel: d => { M.f.steps = M.f.steps.filter((_, i) => i !== +d.i); renderModal(); },
+  npDel: d => { const k = +d.i, ov = {}; Object.entries(M.f.ov || {}).forEach(([i, o]) => { i = +i; if (i < k) ov[i] = o; else if (i > k) ov[i - 1] = o; }); M.f.ov = ov; M.f.steps = M.f.steps.filter((_, i) => i !== k); renderModal(); },
   npAdd: () => { const t = (M.f._s || '').trim(); if (!t) return; M.f.steps = M.f.steps.concat([{ t }]); M.f._s = ''; renderModal(); const el = $('np-step'); if (el) el.focus(); },
   npSave: async () => { const f = M.f; const id = uid(); let steps;
     if (f.mode === 'copy') { const src = S.projects[f.src]; if (!src) return; const dates = (src.steps || []).filter(x => x.due).map(x => x.due).sort(); const anchor = dates[dates.length - 1]; const mv = dd => dd && anchor ? snapWd(add(npAnchor(f), Math.round((P(dd) - P(anchor)) / 864e5))) : null; steps = (src.steps || []).map(x => ({ t: x.t, due: mv(x.due), done: false, who: x.who || '', dur: x.dur || null, area: x.area || '', subs: (x.subs || []).map(sb => ({ t: sb.t, due: mv(sb.due), done: false, who: sb.who || '', dur: sb.dur != null ? sb.dur : null })) })); }
     else if (f.scope === 'personal') steps = f.steps.map(x => ({ t: x.t, due: x.off != null ? add(f.base, x.off) : f.base, done: false, who: '', subs: (x.subs || []).map(t => ({ t, due: null, who: '', done: false })) }));
     else steps = f.steps.map((x, i) => ({ t: x.t, due: snapWd(add(npAnchor(f), -(f.steps.length - 1 - i) * (+f.gap || 5))), done: false, who: '' }));
+    Object.entries(f.ov || {}).forEach(([i, o]) => { const st = steps[+i]; if (!st) return; if (o.t != null && o.t.trim()) st.t = o.t.trim(); if (o.due) st.due = o.due; });
     const src = f.mode === 'copy' ? S.projects[f.src] : null;
-    await put('projects', id, Object.assign({ scope: f.scope || 'work', name: f.name.trim() || '새 ' + f.type, type: f.type, area: f.area || (src && src.area) || '', status: 'active', steps, memo: src ? src.memo || '' : '', created: Date.now(), showCal: f.showCal !== false, abbr: (f.abbr || '').trim() }, calData(f)));
+    await put('projects', id, Object.assign({ scope: f.scope || 'work', name: f.name.trim() || '새 ' + f.type, type: f.type, area: f.area || (src && src.area) || '', status: 'active', steps, memo: src ? src.memo || '' : '', created: Date.now(), showCal: f.showCal !== false, abbr: (f.abbr || '').trim(), members: (f.members || []).concat((f._mb || '').split(/\s*,\s*/).filter(Boolean)), budget: f.budget === '' || f.budget == null ? null : +f.budget, costs: [], kpis: f.kpis || (f.scope !== 'personal' && f.type === '행사' ? [{ n: '상담', goal: null, act: 0 }, { n: 'DB 접수', goal: null, act: 0 }, { n: '계약', goal: null, act: 0 }] : []) }, calData(f)));
     V.selProject = id; V.fProject = 'live'; closeModal(); if (V.route !== 'project') go('project'); toast('만들었어요'); },
   psSet: d => { M.f[d.k] = d.k === 'star' ? !!d.v : d.v; renderModal(); },
   psSave: async () => { const f = M.f, p = S.projects[f.id]; let steps = p.steps || [];
     if (f.s === 'done') { if (f.split === 'split') { PLOCK++; try { Object.values(S.items).filter(i => i.proj === p.id && !i.done).forEach(i => { const o = Object.assign({}, i, { title: i.title + ' (' + p.name + ')' }); delete o.proj; delete o.punit; delete o.pname; put('items', i.id, o); }); } finally { PLOCK--; } } else steps = steps.map(x => Object.assign({}, x, { done: true, subs: (x.subs || []).map(sb => Object.assign({}, sb, { done: true })) })); }
     if (f.s === 'stop') for (const d of Object.values(S.delegs).filter(d => d.project === p.id && !['closed','stopped'].includes(d.status))) await put('delegs', d.id, Object.assign({}, d, { status: 'stopped', log: (d.log || []).concat([{ at: TODAY(), t: '프로젝트 중단' }]) }));
+    if (f.s === 'done' && (f.rg || f.rb || f.rn)) { p.retro = { good: (f.rg || '').trim(), bad: (f.rb || '').trim(), next: (f.rn || '').trim(), at: TODAY() }; f.memo = f.memo || '회고 작성'; }
     await put('projects', p.id, Object.assign({}, p, { status: f.s, statusAt: TODAY(), statusMemo: f.memo, steps, star: f.s === 'done' ? f.star : p.star })); closeModal(); toast({ hold: '보류했어요', stop: '중단했어요', done: '완료했어요' }[f.s]); },
   edAct: d => { M.f.acts[d.id] = d.v; renderModal(); },
   edTop: d => { const n = Object.values(M.f.top).filter(Boolean).length; if (!M.f.top[d.id] && n >= 3) return; M.f.top[d.id] = !M.f.top[d.id]; renderModal(); },
@@ -2609,6 +2701,8 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('input', e => {
   const t = e.target;
+  if (t.dataset.npt != null && M) { M.f.ov = M.f.ov || {}; M.f.ov[t.dataset.npt] = Object.assign({}, M.f.ov[t.dataset.npt], { t: t.value }); return; }
+  if (t.dataset.npd != null) return;
   if (t.dataset.libq) { V.libQ = t.value; const pos = t.selectionStart; renderMain(); const el = $('lib-q'); if (el) { el.focus(); try { el.setSelectionRange(pos, pos); } catch (x) {} } return; }
   if (t.dataset.f && M && (t.type === 'date' || t.type === 'month' || t.tagName === 'SELECT')) return;
   if (t.dataset.f && M) { let v = t.value; if (t.dataset.num) v = v === '' ? '' : +v; M.f[t.dataset.f] = v;
@@ -2624,6 +2718,8 @@ document.addEventListener('input', e => {
 document.addEventListener('change', async e => {
   const t = e.target;
   if (t.dataset.adm) { V.adM = t.value; render(); return; }
+  if (t.dataset.kpi) { const p = S.projects[t.dataset.id]; if (!p) return; const K = (p.kpis || []).map((k, i) => i === +t.dataset.i ? Object.assign({}, k, { [t.dataset.kpi]: t.value === '' ? null : +t.value }) : k); await put('projects', p.id, Object.assign({}, p, { kpis: K })); return; }
+  if (t.dataset.npd != null && M) { M.f.ov = M.f.ov || {}; M.f.ov[t.dataset.npd] = Object.assign({}, M.f.ov[t.dataset.npd], { due: t.value }); if (document.activeElement === t && coarse()) t.addEventListener('blur', () => { if (M) renderModal(); }, { once: true }); else renderModal(); return; }
   if (t.dataset.tpart) { const box = t.closest('.tsel'); const hh = box.querySelector('[data-tpart="h"]').value, mm = box.querySelector('[data-tpart="m"]').value; const val = hh ? hh + ':' + mm : '';
     if (t.dataset.tf && M) { M.f[t.dataset.tf] = val; if (t.dataset.tf === 'start' && M.f.kind === 'event' && val && M.f.end && hm(M.f.end) <= hm(val)) M.f.end = toHM(Math.min(23.99, hm(val) + 1)); renderModal(); return; }
     if (t.dataset.tset) { setPath(S.settings, t.dataset.tset, val); await putSettings(); if (M) renderModal(); return; } }
@@ -2684,6 +2780,13 @@ document.addEventListener('drop', async e => {
   if (date === i.date && (start === undefined || start === i.start)) return;
   await undoable('옮겼어요 · ' + mdw(date) + (start ? ' ' + start : ''), () => moveItem(id, date, start, '끌어서 이동'));
 });
+
+/* 프로젝트 단계·하위업무 끌어서 이동 */
+let PDRAG = null;
+document.addEventListener('dragstart', e => { const h0 = e.target.closest && e.target.closest('[data-pdrag]'); if (!h0) return; PDRAG = h0.dataset.pdrag; try { e.dataTransfer.setData('text/plain', PDRAG); e.dataTransfer.effectAllowed = 'move'; const row = h0.closest('.step'); if (row) e.dataTransfer.setDragImage(row, 20, 16); } catch (x) {} });
+document.addEventListener('dragover', e => { if (!PDRAG) return; const z = e.target.closest('[data-pdrop]'); if (!z || z.dataset.pdrop.split('|')[0] !== PDRAG.split('|')[0]) return; const fj = +PDRAG.split('|')[2], tj = +z.dataset.pdrop.split('|')[2]; if (fj < 0 && tj >= 0) return; e.preventDefault(); document.querySelectorAll('.step.dropon').forEach(x => { if (x !== z) x.classList.remove('dropon'); }); z.classList.add('dropon'); });
+document.addEventListener('drop', e => { if (!PDRAG) return; const z = e.target.closest('[data-pdrop]'); const src = PDRAG; PDRAG = null; document.querySelectorAll('.step.dropon').forEach(x => x.classList.remove('dropon')); if (!z) return; e.preventDefault(); const [pid, fi, fj] = src.split('|'), [pid2, ti, tj] = z.dataset.pdrop.split('|'); if (pid !== pid2) return; pMove(pid, +fi, +fj, +ti, +tj); });
+document.addEventListener('dragend', () => { PDRAG = null; document.querySelectorAll('.step.dropon').forEach(x => x.classList.remove('dropon')); });
 
 /* 휴대폰 스와이프: 좌우로 날짜 이동 · 할 일 옆으로 밀어 완료 */
 let SW = null;
